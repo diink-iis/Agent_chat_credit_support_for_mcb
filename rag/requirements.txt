@@ -1,0 +1,4 @@
+langchain-gigachat>=0.5
+chromadb>=0.5
+numpy>=1.24
+python-dotenv>=1.0

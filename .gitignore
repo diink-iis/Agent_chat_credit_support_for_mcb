@@ -1,0 +1,11 @@
+# Секреты — НЕ коммитим (шаблон .env.example остаётся в гите)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
