@@ -150,8 +150,21 @@ def retrieve_rag_node(state: AgentState, deps: GraphDeps) -> dict:
 
 # --- generate_answer ----------------------------------------------------------
 
-# Категории, в которых ответ — корректный отказ (без выдачи данных).
-_REJECTION_CATEGORIES = {"edge_no_data", "edge_manipulation", "offtopic"}
+# Категории, в которых ответ — корректный отказ от недопустимого.
+# offtopic / edge_no_data сюда НЕ входят: в датасете вежливое перенаправление
+# и честное «нет данных» размечены как outcome_type=info (gold qa.jsonl), а не
+# rejection. rejection зарезервирован за отказом от недопустимого (манипуляции).
+_REJECTION_CATEGORIES = {"edge_manipulation"}
+
+# Маркеры расчёта досрочного погашения — единственный транзакционный кейс,
+# который датасет размечает как outcome_type=calculation (подкатегория
+# tx_repayment_calc). Прочие транзакционные запросы (статус, остаток) — info.
+_CALCULATION_MARKERS = ("досрочн", "закрыть кредит", "закрою", "закрыть свой",
+                        "погасить полностью", "полного погашения")
+
+
+def _is_repayment_calc(text: str) -> bool:
+    return any(marker in text.lower() for marker in _CALCULATION_MARKERS)
 
 
 def generate_answer_node(state: AgentState, deps: GraphDeps) -> dict:
@@ -167,7 +180,7 @@ def generate_answer_node(state: AgentState, deps: GraphDeps) -> dict:
     if outcome_type is None:
         if state.get("category") in _REJECTION_CATEGORIES:
             outcome_type = "rejection"
-        elif state.get("needs_db"):
+        elif state.get("needs_db") and _is_repayment_calc(latest_client_text(state)):
             outcome_type = "calculation"
         else:
             outcome_type = "info"

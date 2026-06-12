@@ -107,6 +107,71 @@ def _format_dialog(state: AgentState) -> str:
     return "\n".join(lines)
 
 
+def _money(value) -> str:
+    """Формат суммы с разделителями тысяч: 1800000 -> '1 800 000 ₽'."""
+    try:
+        return f"{int(value):,}".replace(",", " ") + " ₽"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _format_tool_results(tool_results: dict) -> str:
+    """
+    Человекочитаемая сводка данных клиента для генератора.
+
+    Сырой JSON модель игнорировала (отправляла «смотрите в интернет-банке»). Здесь —
+    только операционные поля, нужные для ответа. Скоринг (`credit_score`), долговую
+    нагрузку и категорию отказа НЕ включаем вовсе: их нельзя раскрывать (п. 6.2), а
+    любое присутствие в контексте провоцирует утечку — что и наблюдалось на прогоне.
+    """
+    lines: list[str] = []
+
+    profile = tool_results.get("profile") or {}
+    if profile:
+        bits = [profile.get("name") or profile.get("client_id", "")]
+        if profile.get("industry"):
+            bits.append(profile["industry"])
+        if profile.get("annual_revenue") is not None:
+            bits.append(f"выручка {_money(profile['annual_revenue'])}/год")
+        if profile.get("registration_date"):
+            bits.append(f"в бизнесе с {profile['registration_date']}")
+        bits.append("счёт в банке: " + ("да" if profile.get("has_account_in_bank") else "нет"))
+        bits.append("зарплатный проект: " + ("да" if profile.get("has_payroll_project") else "нет"))
+        lines.append("Профиль: " + ", ".join(b for b in bits if b))
+
+    loans = tool_results.get("loans") or []
+    if loans:
+        lines.append(f"Действующие кредиты ({len(loans)}):")
+        for ln in loans:
+            row = (f"  • {ln.get('product_name', ln.get('product_code'))} "
+                   f"({ln.get('contract_id')}): остаток {_money(ln.get('principal_outstanding'))}, "
+                   f"ставка {ln.get('interest_rate')}%, срок {ln.get('term_months')} мес")
+            term, passed = ln.get("term_months"), ln.get("months_passed")
+            if isinstance(term, int) and isinstance(passed, int):
+                row += f" (прошло {passed}, осталось ~{max(term - passed, 0)} мес)"
+            row += (f", след. платёж {ln.get('next_payment_date')} на "
+                    f"{_money(ln.get('next_payment_amount'))}")
+            if ln.get("has_overdue"):
+                row += f", ПРОСРОЧКА {ln.get('overdue_days')} дн. на {_money(ln.get('overdue_amount'))}"
+            if ln.get("is_restructured"):
+                row += ", реструктурирован"
+            lines.append(row)
+
+    apps = tool_results.get("applications") or []
+    if apps:
+        lines.append(f"Заявки ({len(apps)}):")
+        for ap in apps:
+            row = (f"  • {ap.get('product_code')}: запрошено {_money(ap.get('amount_requested'))} "
+                   f"на {ap.get('term_requested_months')} мес, подана {ap.get('application_date')}, "
+                   f"статус «{ap.get('status')}»")
+            if ap.get("decision"):
+                row += f", решение «{ap['decision']}» от {ap.get('decision_date')}"
+            # decision_reason_category НЕ включаем — это скоринг-чувствительно (п. 6.2).
+            lines.append(row)
+
+    return "\n".join(lines)
+
+
 def make_gigachat_classifier(chat=None) -> Callable[[AgentState], dict]:
     """
     Классификатор на GigaChat. Возвращает функцию для GraphDeps.classify_fn.
@@ -161,7 +226,8 @@ def make_gigachat_generator(chat=None) -> Callable[[AgentState], str]:
     Подмешивает правило разрешения коллизий Участника 1.
     """
     chat = chat or build_gigachat_chat(temperature=0.2)
-    system_prompt = _read(PROMPTS_DIR / "generate.md")
+    # Системный промпт = общая роль/ограничения (3.1) + инструкция по задаче генерации (3.3).
+    system_prompt = _read(PROMPTS_DIR / "system_prompt.md") + "\n\n---\n\n" + _read(PROMPTS_DIR / "generate.md")
     collision_rule = load_collision_rule()
 
     def generate(state: AgentState) -> str:
@@ -169,15 +235,30 @@ def make_gigachat_generator(chat=None) -> Callable[[AgentState], str]:
         tool_results = state.get("tool_results", {})
 
         user_parts = [f"Вопрос клиента: {latest_client_text(state)}"]
-        if collision_rule:
-            user_parts.append(f"\nПравило приоритета при коллизиях:\n{collision_rule}")
-        if context:
-            user_parts.append(f"\n{context}")
-        if tool_results and not tool_results.get("access_denied"):
-            user_parts.append(f"\nДанные клиента:\n{json.dumps(tool_results, ensure_ascii=False)}")
+
+        # Данные клиента — АВТОРИТЕТНЫЙ источник, идут первыми и важнее нормативки
+        # для запросов о статусе/состоянии (иначе модель отправляет в интернет-банк).
+        has_data = bool(tool_results) and not tool_results.get("access_denied") and (
+            tool_results.get("profile") or tool_results.get("loans") or tool_results.get("applications")
+        )
+        if has_data:
+            user_parts.append(
+                "\n=== ДАННЫЕ КЛИЕНТА (из БД банка, АВТОРИТЕТНЫЙ ИСТОЧНИК) ===\n"
+                + _format_tool_results(tool_results)
+                + "\n\nЭто СОБСТВЕННЫЕ данные авторизованного клиента — отвечать по ним "
+                  "разрешено, это не данные третьих лиц. Используй конкретные значения "
+                  "(статус, остаток, даты, суммы, просрочка). НЕ отправляй клиента в "
+                  "интернет-банк и НЕ проси уточнить то, что уже есть выше."
+            )
         if tool_results.get("access_denied"):
             user_parts.append("\nДанные клиента недоступны (анонимный канал). "
                               "Предложи авторизоваться, не выдумывай данные.")
+        if collision_rule:
+            user_parts.append(f"\nПравило приоритета при коллизиях:\n{collision_rule}")
+        if context:
+            label = ("Нормативка (для процедур/условий; по статусу/остатку приоритет "
+                     "у данных клиента выше)") if has_data else "Источники из базы знаний"
+            user_parts.append(f"\n{label}:\n{context}")
         user_parts.append("\nОтветь кратко и точно, цитируя источники (документ#пункт).")
 
         try:

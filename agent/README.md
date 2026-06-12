@@ -20,8 +20,9 @@ agent/
   llm.py         # боевые classify/generate на GigaChat + make_gigachat_deps()
   stubs.py       # оффлайн-заглушки (baseline-классификатор, шаблонный генератор, FakeRetriever)
   prompts/
-    classify.md  # точка подключения Участника 3 (3.2)
-    generate.md  # точка подключения Участника 3 (3.3)
+    system_prompt.md # 3.1 — роль/ограничения (п.6.2)/тон (п.9); подмешивается в generate
+    classify.md      # 3.2 + 3.4 — классификатор + детекторы edge (manipulation/injection/чужие данные)
+    generate.md      # 3.3 — грунтинг + chain-of-thought для коллизий
 tests/
   test_layer1.py # tools + авторизация
   test_layer2.py # состояние + стык с RAG-хелперами Участника 1
@@ -75,11 +76,12 @@ print(result["answer"])
   и хелперы `build_query_from_history`, `detect_product` (импортируются из `rag`).
   Реальный ретривер подключается в `make_gigachat_deps` через `Retriever.load("rag/index")`.
   Правило коллизий читается из `rag/prompts/collision_priority.md`.
-- **Участник 3 (промпты).** Тело `classify` и `generate_answer` редактируется в
-  `agent/prompts/classify.md` и `agent/prompts/generate.md`. Контракт узлов не
+- **Участник 3 (промпты + оценка).** Тело `classify`/`generate_answer` — в
+  `agent/prompts/{system_prompt,classify,generate}.md` (3.1–3.4). Контракт узлов не
   меняется: `classify_fn(state) -> dict{category, escalation_trigger, needs_db,
   needs_rag, detected_product, negative_markers}`, `generate_fn(state) -> str`.
-  Для оценки (3.5) граф вызывается как в примере боевого режима выше.
+  E2E-оценка (3.5–3.6) — скрипт `evaluate.py` в корне репозитория, метрики и находки
+  в `EVALUATION.md`. Прогон: `python evaluate.py --mode stub|gigachat [--judge]`.
 
 ## Принципы безопасности
 

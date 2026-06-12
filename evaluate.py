@@ -1,0 +1,384 @@
+"""
+evaluate.py — E2E-оценка агента по qa.jsonl (задача 3.5 Участника 3).
+
+Прогоняет все 180 кейсов qa.jsonl через собранный граф и считает метрики
+ОТДЕЛЬНО ПО КАЖДОЙ из 8 категорий (рекомендация README: разные категории
+проверяют разные аспекты).
+
+Что измеряется (детерминированно, из состояния графа):
+  - category_acc  — классификатор поставил верную категорию (qa.category);
+  - outcome_acc   — тип финального результата совпал с expected_outcome_type
+                    (info|calculation|escalation|rejection|clarification);
+  - для escalation_* — доля верных эскалаций + совпадение триггера;
+  - для edge_*/offtopic — доля корректных отказов (outcome_type=rejection);
+  - citation_recall — попал ли хотя бы один referenced_document в источники
+                    ответа (осмысленно только в gigachat-режиме с реальным RAG);
+  - judge (опц., --judge) — LLM-судья на GigaChat оценивает соответствие ответа
+                    expected_behavior (0/1).
+
+Режимы:
+  --mode stub      — оффлайн, без GigaChat (baseline-классификатор + FakeRetriever +
+                     шаблонный генератор). Метрики category/outcome/escalation
+                     осмысленны; citation/judge — нет (RAG фейковый).
+  --mode gigachat  — боевой: реальный Retriever Участника 1 + GigaChat-узлы.
+                     Нужен .env с GIGACHAT_CREDENTIALS и собранный rag/index.
+
+Использование:
+  python evaluate.py --mode stub
+  python evaluate.py --mode gigachat --judge
+  python evaluate.py --mode gigachat --limit 30 --categories info,transactional
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from collections import defaultdict
+from pathlib import Path
+from typing import Optional
+
+from agent.graph import build_graph
+from agent.state import make_initial_state
+
+REPO_ROOT = Path(__file__).resolve().parent
+DEFAULT_QA = REPO_ROOT / "data" / "qa" / "qa.jsonl"
+
+# Все 8 категорий датасета — фиксируем порядок вывода.
+ALL_CATEGORIES = [
+    "info", "transactional", "escalation_sales", "escalation_negative",
+    "edge_no_data", "edge_conflict", "edge_manipulation", "offtopic",
+]
+ESCALATION_CATEGORIES = {"escalation_sales", "escalation_negative"}
+
+# Категория → ожидаемый триггер эскалации (для проверки точности триггера).
+_CATEGORY_TO_TRIGGER = {
+    "escalation_sales": {"intent"},
+    "escalation_negative": {"negative", "human_request"},
+}
+
+
+# --- Сопоставление источников с referenced_documents (как в rag/evaluate_recall) ---
+
+def _extract_doc_and_section(ref: str) -> tuple[str, str]:
+    """Из '01_credit_products.md#2.1.3' → ('01_credit_products.md', '2.1.3')."""
+    if "#" in ref:
+        doc_id, section_id = ref.split("#", 1)
+        return doc_id, section_id
+    return ref, ""
+
+
+def _section_matches(result_section: str, ref_section: str) -> bool:
+    """Совпадение секции: точное или префиксное ('2' покрывает '2.1.3')."""
+    if not ref_section:
+        return True
+    if result_section == ref_section:
+        return True
+    return result_section.startswith(ref_section + ".")
+
+
+# Источник в scope_tags имеет вид: "[3] 01_credit_products.md#2.1.5 (BUSINESS_OBOROT)".
+_SOURCE_RE = re.compile(r"([\w./-]+\.md)#([\d.]+)")
+
+
+def _citation_hit(sources: list[dict], referenced_documents: list[str]) -> Optional[bool]:
+    """
+    Попал ли хотя бы один gold-документ в источники ответа.
+    Возвращает None, если у кейса нет referenced_documents (метрика неприменима).
+    """
+    if not referenced_documents:
+        return None
+    parsed: list[tuple[str, str]] = []
+    for tag in sources:
+        match = _SOURCE_RE.search(tag.get("source", ""))
+        if match:
+            parsed.append((match.group(1), match.group(2)))
+    for ref in referenced_documents:
+        ref_doc, ref_section = _extract_doc_and_section(ref)
+        for doc_id, section_id in parsed:
+            if doc_id == ref_doc and _section_matches(section_id, ref_section):
+                return True
+    return False
+
+
+# --- Прогон одного кейса -------------------------------------------------------
+
+def run_case(graph, case: dict) -> dict:
+    """Прогнать один кейс через граф, вернуть наблюдаемые поля состояния."""
+    state = make_initial_state(
+        channel=case.get("channel", "chat_site"),
+        session_client_id=case.get("client_id"),
+        question=case.get("question") or "",
+        history=case.get("history") or [],
+    )
+    result = graph.invoke(
+        state,
+        config={"configurable": {"thread_id": f"eval-{case['id']}"}},
+    )
+    return {
+        "category": result.get("category"),
+        "escalation_trigger": result.get("escalation_trigger"),
+        "outcome_type": result.get("outcome_type"),
+        "answer": result.get("answer", ""),
+        "sources": result.get("sources", []),
+        "escalated": result.get("escalation") is not None,
+    }
+
+
+# --- Метрики -------------------------------------------------------------------
+
+def _blank_bucket() -> dict:
+    return {
+        "total": 0,
+        "category_hits": 0,
+        "outcome_hits": 0,
+        "escalation_hits": 0,    # верно эскалировано + триггер
+        "citation_total": 0,
+        "citation_hits": 0,
+        "judge_total": 0,
+        "judge_hits": 0,
+    }
+
+
+def evaluate(
+    graph,
+    cases: list[dict],
+    judge_fn=None,
+    verbose: bool = False,
+) -> dict:
+    """Прогнать все кейсы и собрать метрики по категориям."""
+    by_cat: dict[str, dict] = defaultdict(_blank_bucket)
+    per_case: list[dict] = []
+
+    for i, case in enumerate(cases, 1):
+        gold_category = case.get("category", "unknown")
+        gold_outcome = case.get("expected_outcome_type")
+        observed = run_case(graph, case)
+
+        bucket = by_cat[gold_category]
+        bucket["total"] += 1
+
+        category_ok = observed["category"] == gold_category
+        outcome_ok = observed["outcome_type"] == gold_outcome
+        bucket["category_hits"] += int(category_ok)
+        bucket["outcome_hits"] += int(outcome_ok)
+
+        # Эскалация: корректна, если эскалировали И триггер из допустимого набора.
+        escalation_ok = None
+        if gold_category in ESCALATION_CATEGORIES:
+            allowed = _CATEGORY_TO_TRIGGER[gold_category]
+            escalation_ok = observed["escalated"] and observed["escalation_trigger"] in allowed
+            bucket["escalation_hits"] += int(escalation_ok)
+
+        # Цитирование (RAG): применимо, если есть referenced_documents.
+        citation_ok = _citation_hit(observed["sources"], case.get("referenced_documents", []))
+        if citation_ok is not None:
+            bucket["citation_total"] += 1
+            bucket["citation_hits"] += int(citation_ok)
+
+        # LLM-судья (опционально).
+        judge_ok = None
+        if judge_fn is not None:
+            judge_ok = judge_fn(case, observed)
+            bucket["judge_total"] += 1
+            bucket["judge_hits"] += int(judge_ok)
+
+        per_case.append({
+            "id": case["id"],
+            "category": gold_category,
+            "predicted_category": observed["category"],
+            "category_ok": category_ok,
+            "expected_outcome": gold_outcome,
+            "predicted_outcome": observed["outcome_type"],
+            "outcome_ok": outcome_ok,
+            "escalation_ok": escalation_ok,
+            "citation_ok": citation_ok,
+            "judge_ok": judge_ok,
+            "answer": observed["answer"],
+        })
+
+        if verbose and not category_ok:
+            print(f"  [{case['id']}] {gold_category} → предсказано {observed['category']!r}")
+        if i % 20 == 0:
+            print(f"  ...{i}/{len(cases)}")
+
+    return {"by_category": dict(by_cat), "per_case": per_case}
+
+
+def _rate(hits: int, total: int) -> float:
+    return hits / total if total else 0.0
+
+
+def summarize(results: dict) -> dict:
+    """Свернуть сырые счётчики в проценты + общий итог."""
+    by_cat = results["by_category"]
+    summary: dict[str, dict] = {}
+    overall = _blank_bucket()
+
+    for cat in ALL_CATEGORIES:
+        b = by_cat.get(cat)
+        if not b:
+            continue
+        for key, value in b.items():
+            overall[key] += value
+        row = {
+            "total": b["total"],
+            "category_acc": _rate(b["category_hits"], b["total"]),
+            "outcome_acc": _rate(b["outcome_hits"], b["total"]),
+        }
+        if cat in ESCALATION_CATEGORIES:
+            row["escalation_acc"] = _rate(b["escalation_hits"], b["total"])
+        if b["citation_total"]:
+            row["citation_recall"] = _rate(b["citation_hits"], b["citation_total"])
+        if b["judge_total"]:
+            row["judge_acc"] = _rate(b["judge_hits"], b["judge_total"])
+        summary[cat] = row
+
+    summary["overall"] = {
+        "total": overall["total"],
+        "category_acc": _rate(overall["category_hits"], overall["total"]),
+        "outcome_acc": _rate(overall["outcome_hits"], overall["total"]),
+        "citation_recall": _rate(overall["citation_hits"], overall["citation_total"])
+        if overall["citation_total"] else None,
+        "judge_acc": _rate(overall["judge_hits"], overall["judge_total"])
+        if overall["judge_total"] else None,
+    }
+    return summary
+
+
+def print_summary(summary: dict) -> None:
+    print("\n" + "=" * 92)
+    print("E2E-ОЦЕНКА АГЕНТА ПО qa.jsonl")
+    print("=" * 92)
+    header = (f"{'категория':<20}{'n':>4}{'category':>11}{'outcome':>10}"
+              f"{'escalation':>12}{'citation':>11}{'judge':>9}")
+    print(header)
+    print("-" * 92)
+    for cat in ALL_CATEGORIES:
+        row = summary.get(cat)
+        if not row:
+            continue
+        esc = row.get("escalation_acc")
+        esc_str = f"{esc:.0%}" if esc is not None else "—"
+        cite_str = f"{row['citation_recall']:.0%}" if "citation_recall" in row else "—"
+        judge_str = f"{row['judge_acc']:.0%}" if "judge_acc" in row else "—"
+        print(f"{cat:<20}{row['total']:>4}{row['category_acc']:>11.0%}"
+              f"{row['outcome_acc']:>10.0%}{esc_str:>12}{cite_str:>11}{judge_str:>9}")
+    print("-" * 92)
+    ov = summary["overall"]
+    cite = f"{ov['citation_recall']:.0%}" if ov["citation_recall"] is not None else "—"
+    judge = f"{ov['judge_acc']:.0%}" if ov["judge_acc"] is not None else "—"
+    print(f"{'ИТОГО':<20}{ov['total']:>4}{ov['category_acc']:>11.0%}"
+          f"{ov['outcome_acc']:>10.0%}{'—':>12}{cite:>11}{judge:>9}")
+    print("=" * 92)
+    print("category — точность классификатора (qa.category); "
+          "outcome — тип результата (qa.expected_outcome_type);\nescalation — "
+          "эскалировано с верным триггером; citation — gold-источник в ответе "
+          "(RAG); judge — оценка ответа LLM-судьёй.")
+
+
+# --- LLM-судья (опционально, gigachat-режим) -----------------------------------
+
+def make_judge():
+    """Собрать LLM-судью на GigaChat: соответствует ли ответ expected_behavior."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from agent.llm import build_gigachat_chat
+
+    chat = build_gigachat_chat(temperature=0.0)
+    system = (
+        "Ты — строгий оценщик качества ответов банковского Помощника по кредитованию МСБ. "
+        "Тебе дают ожидаемое поведение и фактический ответ. Оцени, выполняет ли ответ "
+        "ожидаемое поведение по сути (факты, корректный отказ/эскалация, отсутствие "
+        "выдумок и нарушений ограничений). Верни ТОЛЬКО JSON: "
+        '{"pass": true|false, "reason": "коротко"}.'
+    )
+
+    def judge(case: dict, observed: dict) -> bool:
+        user = (
+            f"Вопрос клиента: {case.get('question') or '(см. историю диалога)'}\n"
+            f"Ожидаемое поведение: {case.get('expected_behavior')}\n"
+            f"Ожидаемый тип результата: {case.get('expected_outcome_type')}\n\n"
+            f"Фактический ответ Помощника:\n{observed.get('answer')}\n\n"
+            "Верни только JSON."
+        )
+        try:
+            response = chat.invoke([SystemMessage(content=system), HumanMessage(content=user)])
+            data = json.loads(response.content.replace("```json", "").replace("```", "").strip())
+            return bool(data.get("pass"))
+        except Exception:  # noqa: BLE001 — судья не должен ронять прогон
+            return False
+
+    return judge
+
+
+# --- Сборка зависимостей графа -------------------------------------------------
+
+def build_eval_graph(mode: str, index_dir: str, db_path: Optional[str], top_k: int):
+    if mode == "stub":
+        from agent.llm import make_stub_deps
+        deps = make_stub_deps()
+    elif mode == "gigachat":
+        from dotenv import load_dotenv
+
+        from agent.llm import make_gigachat_deps
+        load_dotenv()
+        deps = make_gigachat_deps(index_dir=index_dir, db_path=db_path, top_k=top_k)
+    else:
+        raise ValueError(f"Неизвестный режим: {mode}")
+    return build_graph(deps)
+
+
+def load_cases(qa_path: Path, categories: Optional[set[str]], limit: Optional[int]) -> list[dict]:
+    cases = []
+    with qa_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            case = json.loads(line)
+            if categories and case.get("category") not in categories:
+                continue
+            cases.append(case)
+    if limit:
+        cases = cases[:limit]
+    return cases
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="E2E-оценка агента по qa.jsonl")
+    parser.add_argument("--mode", choices=["stub", "gigachat"], default="stub")
+    parser.add_argument("--qa", type=Path, default=DEFAULT_QA)
+    parser.add_argument("--index-dir", default="rag/index")
+    parser.add_argument("--db-path", default=None)
+    parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--judge", action="store_true",
+                        help="Включить LLM-судью (только gigachat-режим).")
+    parser.add_argument("--categories", default=None,
+                        help="Подмножество категорий через запятую.")
+    parser.add_argument("--limit", type=int, default=None, help="Ограничить число кейсов.")
+    parser.add_argument("--out", type=Path, default=REPO_ROOT / "eval_results.json")
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args()
+
+    categories = set(args.categories.split(",")) if args.categories else None
+    cases = load_cases(args.qa, categories, args.limit)
+    print(f"Режим: {args.mode}. Кейсов к прогону: {len(cases)}")
+
+    graph = build_eval_graph(args.mode, args.index_dir, args.db_path, args.top_k)
+
+    judge_fn = None
+    if args.judge:
+        if args.mode != "gigachat":
+            print("ВНИМАНИЕ: --judge работает только в gigachat-режиме, игнорирую.")
+        else:
+            judge_fn = make_judge()
+
+    results = evaluate(graph, cases, judge_fn=judge_fn, verbose=args.verbose)
+    summary = summarize(results)
+    print_summary(summary)
+
+    out = {"mode": args.mode, "summary": summary, "per_case": results["per_case"]}
+    args.out.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"\nДетальные результаты сохранены в {args.out}")
+
+
+if __name__ == "__main__":
+    main()

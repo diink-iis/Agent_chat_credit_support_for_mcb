@@ -1,0 +1,85 @@
+{
+  "mode": "gigachat",
+  "summary": {
+    "info": {
+      "total": 5,
+      "category_acc": 0.8,
+      "outcome_acc": 0.8,
+      "citation_recall": 0.8
+    },
+    "overall": {
+      "total": 5,
+      "category_acc": 0.8,
+      "outcome_acc": 0.8,
+      "citation_recall": 0.8,
+      "judge_acc": null
+    }
+  },
+  "per_case": [
+    {
+      "id": "Q-001",
+      "category": "info",
+      "predicted_category": "info",
+      "category_ok": true,
+      "expected_outcome": "info",
+      "predicted_outcome": "info",
+      "outcome_ok": true,
+      "escalation_ok": null,
+      "citation_ok": true,
+      "judge_ok": null,
+      "answer": "Мы предлагаем следующие кредиты для малого бизнеса:\n\n- **«Бизнес-Развитие» (инвестиционный кредит)**  \n  [01_credit_products.md · п.2.2.3]: инвестиционный кредит для бизнеса с годовой выручкой от 15 млн рублей и сроком ведения деятельности не менее 24 месяцев.\n\n- **«Бизнес-Старт» (экспресс-кредит)**  \n  [01_credit_products.md · п.2.4.3]: экспресс-кредит для новых компаний с выручкой от 2,4 млн рублей в год и сроком работы не менее 6 месяцев.\n\n- **«Бизнес-Оборот» (оборотный кредит)**  \n  [01_credit_products.md · п.2.1.4]: оборотный кредит без залога до 5 млн рублей, с обеспечением выше этой суммы.\n\nЭти продукты разработаны специально для поддержки вашего развития и роста."
+    },
+    {
+      "id": "Q-002",
+      "category": "info",
+      "predicted_category": "info",
+      "category_ok": true,
+      "expected_outcome": "info",
+      "predicted_outcome": "info",
+      "outcome_ok": true,
+      "escalation_ok": null,
+      "citation_ok": true,
+      "judge_ok": null,
+      "answer": "Минимальная ставка по оборотному кредиту для бизнеса определяется индивидуально по итогам скоринга, базовая ставка составляет 18,5% годовых (документ 01_credit_products.md, п.2.1.5). Конкретное значение ставки зависит от результатов скоринга и наличия дополнительных факторов, таких как наличие зарплатного проекта и расчётного счёта в банке."
+    },
+    {
+      "id": "Q-003",
+      "category": "info",
+      "predicted_category": "escalation_sales",
+      "category_ok": false,
+      "expected_outcome": "info",
+      "predicted_outcome": "escalation",
+      "outcome_ok": false,
+      "escalation_ok": null,
+      "citation_ok": false,
+      "judge_ok": null,
+      "answer": "Чтобы оформить это, переключаю вас на менеджера — он продолжит работу по вашему обращению."
+    },
+    {
+      "id": "Q-004",
+      "category": "info",
+      "predicted_category": "info",
+      "category_ok": true,
+      "expected_outcome": "info",
+      "predicted_outcome": "info",
+      "outcome_ok": true,
+      "escalation_ok": null,
+      "citation_ok": true,
+      "judge_ok": null,
+      "answer": "Да, для ИП доступен овердрафт «Бизнес-Лимит». Об этом говорится в документе 01_credit_products.md, п.2.3.2 со следующим ограничением: продукт не применим для индивидуальных предпринимателей. Однако, согласно документу 01_credit_products.md, п. [#], для самозанятых этот продукт не предусмотрен."
+    },
+    {
+      "id": "Q-005",
+      "category": "info",
+      "predicted_category": "info",
+      "category_ok": true,
+      "expected_outcome": "info",
+      "predicted_outcome": "info",
+      "outcome_ok": true,
+      "escalation_ok": null,
+      "citation_ok": true,
+      "judge_ok": null,
+      "answer": "Бизнес-Старт — это беззалоговый экспресс-кредит для малого и микробизнеса на любые законные бизнес-цели, решение принимается автоматически (01_credit_products.md, п.2.4.1). Особенность продукта: повторная подача возможна не раньше чем через 60 дней после отказа, одновременно у заёмщика может быть не более одного действующего кредита «Бизнес-Старт» (01_credit_products.md, п.2.4.6). Документы при подаче через интернет-банк или мобильное приложение не требуются (02_application_process.md, п.4.3)."
+    }
+  ]
+}
