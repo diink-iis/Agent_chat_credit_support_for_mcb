@@ -184,7 +184,15 @@ def retrieve_rag_node(state: AgentState, deps: GraphDeps) -> dict:
     query = build_query_from_history(rag_case)
     product_filter = state.get("detected_product") or detect_product(query)
 
-    hits = deps.retriever.retrieve(query=query, product_filter=product_filter, k=deps.top_k)
+    # Устойчивость к сбою поиска/эмбеддингов (сеть/GigaChat): не роняем граф, а
+    # деградируем — отдаём пустой контекст. Генератор по промпту честно скажет, что
+    # не может подтвердить факт, либо ответит из данных клиента (п. 4.4.3, 6.3).
+    try:
+        hits = deps.retriever.retrieve(query=query, product_filter=product_filter, k=deps.top_k)
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("agent.nodes").warning("retrieve_rag: сбой поиска (%s) — пустой контекст.", exc)
+        return {"retrieved_context": "", "scope_tags": [], "retrieved_count": 0}
 
     context_parts: list[str] = []
     scope_tags: list[dict] = []

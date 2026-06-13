@@ -153,7 +153,15 @@ def evaluate(
     for i, case in enumerate(cases, 1):
         gold_category = case.get("category", "unknown")
         gold_outcome = case.get("expected_outcome_type")
-        observed = run_case(graph, case)
+        # Устойчивость к транзиентным сбоям (сеть/GigaChat): один упавший кейс не
+        # должен ронять весь прогон из 180. Помечаем как промах и идём дальше.
+        try:
+            observed = run_case(graph, case)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [{case['id']}] сбой прогона: {exc} — помечаю как промах.")
+            observed = {"category": None, "escalation_trigger": None,
+                        "outcome_type": None, "answer": f"[ошибка прогона: {exc}]",
+                        "sources": [], "escalated": False}
 
         bucket = by_cat[gold_category]
         bucket["total"] += 1
