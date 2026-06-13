@@ -247,7 +247,24 @@ def make_gigachat_generator(chat=None) -> Callable[[AgentState], str]:
         context = state.get("retrieved_context", "")
         tool_results = state.get("tool_results", {})
 
-        user_parts = [f"Вопрос клиента: {latest_client_text(state)}"]
+        # Контекст диалога: без него генератор не понимает уточняющих реплик
+        # («а если внесу 1 млн?», «а как разблокировать?») — теряет тему/продукт,
+        # обсуждавшиеся выше, и отвечает невпопад. Подаём предыдущие реплики и
+        # помечаем последнюю как текущий вопрос.
+        dialog = messages_to_history(state)
+        if len(dialog) > 1:
+            prior = "\n".join(
+                f"{'Клиент' if t['role'] == 'client' else 'Помощник'}: {t['text']}"
+                for t in dialog[:-1]
+            )
+            user_parts = [
+                f"Контекст диалога (предыдущие реплики):\n{prior}",
+                f"\nТекущий вопрос клиента (понимай его в контексте диалога выше — "
+                f"уточнения «а если…», «а по нему…» относятся к продукту/теме из "
+                f"истории): {latest_client_text(state)}",
+            ]
+        else:
+            user_parts = [f"Вопрос клиента: {latest_client_text(state)}"]
 
         # Данные клиента — АВТОРИТЕТНЫЙ источник, идут первыми и важнее нормативки
         # для запросов о статусе/состоянии (иначе модель отправляет в интернет-банк).

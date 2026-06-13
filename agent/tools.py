@@ -171,6 +171,9 @@ def get_eligible_products(
 
     # Стоп-факторы (п. 3.6) — блокируют все продукты.
     stop_factors: list[str] = []
+    notes = (profile.get("notes") or "").lower()
+    if "bankrupt" in notes or "банкрот" in notes:
+        stop_factors.append("открытое производство по делу о банкротстве (п. 3.6)")
     if profile.get("has_active_overdue") and (profile.get("max_overdue_days_12m") or 0) > 30:
         stop_factors.append("просроченная задолженность перед Банком свыше 30 дней")
     if segment == "out_of_segment":

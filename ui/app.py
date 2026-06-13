@@ -37,6 +37,15 @@ if str(REPO_ROOT) not in sys.path:
 
 from langchain_core.messages import HumanMessage
 
+# Боевой режим (GigaChat) — дефолт, поэтому загружаем .env с GIGACHAT_CREDENTIALS
+# из корня репозитория до сборки зависимостей.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(REPO_ROOT / ".env")
+except ImportError:  # python-dotenv не обязателен, если ключ уже в окружении
+    pass
+
 from agent.graph import build_graph
 from agent.state import make_initial_state
 
@@ -67,6 +76,15 @@ NODE_LABELS = {
     "retrieve_rag": "📚 Поиск по нормативке",
     "generate_answer": "✍️ Генерация ответа",
     "escalate": "🚨 Эскалация на оператора",
+}
+
+# Короткие иконки узлов — для компактного трейса маршрута под ответом.
+ROUTE_ICONS = {
+    "classify": "🧭",
+    "query_db": "🗂",
+    "retrieve_rag": "📚",
+    "generate_answer": "✍️",
+    "escalate": "🚨",
 }
 
 # Человекочитаемые названия триггеров эскалации.
@@ -137,8 +155,20 @@ def build_deps(mode: str):
     return make_stub_deps()
 
 
+@st.cache_resource(show_spinner="Загружаю Retriever и GigaChat…")
+def get_deps(mode: str):
+    """
+    Тяжёлые зависимости (Chroma-индекс + GigaChat) — кэшируются по режиму и
+    переиспользуются между сессиями. Без кэша смена клиента/канала в сайдбаре
+    перезагружала бы индекс и реинициализировала GigaChat на каждое переключение.
+    Сами deps без состояния, поэтому шарить их между сессиями безопасно.
+    """
+    return build_deps(mode)
+
+
 def reset_session(mode: str, channel: str, client_id: str | None) -> None:
-    """Начать новую сессию: новый thread_id, чистая история, свежий граф+checkpointer."""
+    """Начать новую сессию: новый thread_id, чистая история, свежий граф+checkpointer.
+    Граф пересобирается дёшево (новый MemorySaver) поверх кэшированных deps."""
     st.session_state.thread_id = f"ui-{uuid.uuid4().hex[:12]}"
     st.session_state.history = []
     st.session_state.seeded = False
@@ -147,7 +177,7 @@ def reset_session(mode: str, channel: str, client_id: str | None) -> None:
     st.session_state.client_id = client_id
     st.session_state.pop("pending", None)
     try:
-        st.session_state.graph = build_graph(build_deps(mode))
+        st.session_state.graph = build_graph(get_deps(mode))
         st.session_state.graph_error = None
     except Exception as exc:  # noqa: BLE001 — показать пользователю причину
         st.session_state.graph = None
@@ -204,6 +234,12 @@ def render_meta(result: dict) -> None:
     icon, label, color = OUTCOME_BADGE.get(outcome, ("•", outcome or "—", "gray"))
     category = result.get("category") or "—"
     st.markdown(f":{color}-badge[{icon} {label}] :gray-badge[категория: {category}]")
+
+    # Компактный трейс реального маршрута по графу.
+    route = result.get("_route") or []
+    if route:
+        trace = " → ".join(f"{ROUTE_ICONS.get(n, '•')} {n}" for n in route)
+        st.caption(f"Маршрут: {trace}")
 
     sources = result.get("sources") or []
     tool_results = result.get("tool_results") or {}
@@ -272,7 +308,7 @@ def render_meta(result: dict) -> None:
 # --- UI -----------------------------------------------------------------------
 
 st.set_page_config(page_title="Поддержка кредитования МСБ", page_icon="🏦", layout="centered")
-st.title("🏦 Помощник по кредитованию МСБ")
+st.markdown("## 🏦 Помощник по кредитованию МСБ")
 st.caption("Учебный агент: RAG по нормативке + доступ к БД клиента + эскалация на оператора.")
 
 # --- Сайдбар: режим, канал, клиент, управление сессией ---
@@ -281,11 +317,20 @@ with st.sidebar:
 
     mode_label = st.radio(
         "Режим",
-        ["Оффлайн (заглушки)", "Боевой (GigaChat)"],
-        help="Оффлайн — без GigaChat и RAG-индекса (rule-based + шаблон). "
-             "Боевой — реальный Retriever + GigaChat (нужны ключ и индекс).",
+        ["Боевой (GigaChat)", "Оффлайн (заглушки)"],
+        index=0,  # по умолчанию боевой: реальные ответы и источники
+        help="Боевой — реальный Retriever + GigaChat (нужны ключ и индекс), "
+             "настоящие ответы и цитаты. Оффлайн — без GigaChat/RAG: rule-based "
+             "классификатор + шаблон, проверяет ТОЛЬКО маршрутизацию (ответы и "
+             "источники ненастоящие).",
     )
     mode = "gigachat" if mode_label.startswith("Боевой") else "stub"
+    if mode == "stub":
+        st.warning(
+            "Оффлайн-режим: ответы шаблонные, источники — заглушка (FakeRetriever). "
+            "Для оценки качества ответов переключитесь на **Боевой (GigaChat)**.",
+            icon="⚠️",
+        )
 
     channel = st.selectbox(
         "Канал обращения",
@@ -333,7 +378,8 @@ if st.session_state.get("graph_error"):
 
 # История диалога.
 for entry in st.session_state.get("history", []):
-    with st.chat_message(entry["role"]):
+    avatar = "🏦" if entry["role"] == "assistant" else "🧑‍💼"
+    with st.chat_message(entry["role"], avatar=avatar):
         st.markdown(entry["content"])
         if entry["role"] == "assistant" and entry.get("result"):
             render_meta(entry["result"])
@@ -357,16 +403,23 @@ if not st.session_state.get("history") and not prompt:
 # Прогон хода.
 if prompt:
     st.session_state.history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar="🧑‍💼"):
         st.markdown(prompt)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="🏦"):
         result: dict = {}
+        route: list[str] = []
         try:
+            started = time.perf_counter()
             with st.status("Агент работает…", expanded=True) as status:
                 for node, result in stream_turn(prompt):
+                    if not route or route[-1] != node:
+                        route.append(node)
                     status.write(NODE_LABELS.get(node, node))
-                status.update(label="Готово", state="complete", expanded=False)
+                elapsed = time.perf_counter() - started
+                status.update(label=f"✅ Готово за {elapsed:.1f} с", state="complete", expanded=False)
+            if result:
+                result["_route"] = route
             answer = result.get("answer") or "_(пустой ответ)_"
             st.write_stream(typewriter(answer))
         except Exception as exc:  # noqa: BLE001

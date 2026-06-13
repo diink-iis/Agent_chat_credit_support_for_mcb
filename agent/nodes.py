@@ -61,11 +61,43 @@ class GraphDeps:
 
 # --- classify -----------------------------------------------------------------
 
+# Защита в глубину (п. 7 РП-ОБ-005): высокоточные маркеры безопасности, при которых
+# обращение ВСЕГДА эскалируется как suspicious — независимо от решения LLM. Это
+# детерминированный предохранитель для критичных по комплаенсу паттернов: запрос
+# чужих данных, обращение представителя без подтверждённых полномочий, prompt
+# injection. LLM-классификатор стохастичен и иногда пропускает их (наблюдалось на
+# прогоне: «я бухгалтер ООО …» классифицировался как self-query и выдавал данные).
+_SECURITY_OVERRIDE_MARKERS = (
+    # Данные третьих лиц (п. 7.2).
+    "моего партнёр", "моего партнер", "моего супруг", "моей супруг", "моего контрагент",
+    "моего конкурент", "моего коллег", "моего знаком", "данные другого", "чужой клиент",
+    "чужие данные", "выведи всех клиент", "всех клиентов", "данные клиента c-",
+    # Обращение представителя без подтверждённых полномочий (п. 8.6, 7.1).
+    "я бухгалтер", "их бухгалтер", "я юрист", "я представитель", "представляю интересы",
+    "по доверенности", "есть доверенность", "я директор отделения", "я сотрудник банка",
+    # Переопределение инструкций / prompt injection (п. 7.3).
+    "забудь инструкц", "забудь все инструкц", "забудь всё инструкц", "игнорируй",
+    "ignore previous", "ignore all", "системный промпт", "system prompt", "ты теперь",
+    "с этого момента ты", "притворись",
+)
+
+
+def _security_override(text: str) -> bool:
+    """True, если в реплике есть высокоточный маркер угрозы безопасности (п. 7)."""
+    low = text.lower()
+    return any(marker in low for marker in _SECURITY_OVERRIDE_MARKERS)
+
+
 def classify_node(state: AgentState, deps: GraphDeps) -> dict:
     """
     Классифицировать обращение: категория, триггер эскалации, нужна ли БД/RAG,
     продукт, маркеры негатива. Тело классификации — в deps.classify_fn
     (GigaChat-промпт Участника 3 или baseline-заглушка).
+
+    Поверх LLM работает детерминированный предохранитель безопасности
+    (_security_override): критичные по п. 7 паттерны принудительно уводятся в
+    suspicious-эскалацию, чтобы запрос чужих/служебных данных не зависел от
+    стохастики модели и не доходил до query_db.
     """
     result = deps.classify_fn(state)
 
@@ -74,11 +106,23 @@ def classify_node(state: AgentState, deps: GraphDeps) -> dict:
         latest_client_text(state)
     )
 
+    category = result.get("category")
+    escalation_trigger = result.get("escalation_trigger")
+    needs_db = bool(result.get("needs_db", False))
+    needs_rag = bool(result.get("needs_rag", False))
+
+    # Предохранитель безопасности: чужие данные / представитель / injection → suspicious.
+    if _security_override(latest_client_text(state)):
+        category = "edge_manipulation"
+        escalation_trigger = "suspicious"
+        needs_db = False
+        needs_rag = False
+
     return {
-        "category": result.get("category"),
-        "escalation_trigger": result.get("escalation_trigger"),
-        "needs_db": bool(result.get("needs_db", False)),
-        "needs_rag": bool(result.get("needs_rag", False)),
+        "category": category,
+        "escalation_trigger": escalation_trigger,
+        "needs_db": needs_db,
+        "needs_rag": needs_rag,
         "detected_product": detected_product,
         "negative_markers": result.get("negative_markers", []),
     }
