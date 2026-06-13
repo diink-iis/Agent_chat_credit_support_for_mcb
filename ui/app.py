@@ -358,6 +358,13 @@ with st.sidebar:
 
     st.divider()
     start_new = st.button("🔄 Начать новую сессию", use_container_width=True)
+    dev_mode = st.toggle(
+        "🛠 Режим разработчика",
+        value=False,
+        help="Показывать «изнанку» под ответом: маршрут по графу, категорию, "
+             "источники RAG, данные клиента из БД, пакет эскалации. "
+             "Выкл — чистый клиентский чат (только ответ).",
+    )
 
 # Инициализация / пересборка сессии при первом запуске или смене параметров.
 params_changed = (
@@ -381,7 +388,7 @@ for entry in st.session_state.get("history", []):
     avatar = "🏦" if entry["role"] == "assistant" else "🧑‍💼"
     with st.chat_message(entry["role"], avatar=avatar):
         st.markdown(entry["content"])
-        if entry["role"] == "assistant" and entry.get("result"):
+        if entry["role"] == "assistant" and entry.get("result") and dev_mode:
             render_meta(entry["result"])
 
 # Ввод: поле + (по клику) пример из онбординга.
@@ -425,7 +432,7 @@ if prompt:
         except Exception as exc:  # noqa: BLE001
             result, answer = {}, f"⚠️ Ошибка прогона графа: {exc}"
             st.markdown(answer)
-        if result:
+        if result and dev_mode:
             render_meta(result)
 
     st.session_state.history.append(
