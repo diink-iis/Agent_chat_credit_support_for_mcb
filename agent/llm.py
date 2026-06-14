@@ -310,15 +310,20 @@ def make_gigachat_deps(
     db_path: Optional[str] = None,
     top_k: int = 8,
     escalation_log_path: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> GraphDeps:
     """
     Собрать GraphDeps для прода: реальный Retriever Участника 1 + GigaChat-узлы.
     Один чат-клиент переиспользуется для classify и generate.
+
+    База агента — GigaChat-Pro (выше потолок на пограничных intent↔info кейсах);
+    судья при оценке остаётся на Lite (см. evaluate.make_judge). Модель можно
+    переопределить аргументом `model` или переменной окружения GIGACHAT_MODEL.
     """
     from rag import Retriever  # ленивый импорт (тянет chromadb)
 
     retriever = Retriever.load(index_dir)
-    chat = build_gigachat_chat()
+    chat = build_gigachat_chat(model=model or os.getenv("GIGACHAT_MODEL", "GigaChat-Pro"))
     return GraphDeps(
         retriever=retriever,
         classify_fn=make_gigachat_classifier(chat),

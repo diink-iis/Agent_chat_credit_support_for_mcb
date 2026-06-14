@@ -12,7 +12,10 @@ evaluate.py — E2E-оценка агента по qa.jsonl (задача 3.5 У
   - для escalation_* — доля верных эскалаций + совпадение триггера;
   - для edge_*/offtopic — доля корректных отказов (outcome_type=rejection);
   - citation_recall — попал ли хотя бы один referenced_document в источники
-                    ответа (осмысленно только в gigachat-режиме с реальным RAG);
+                    ответа. Считается ТОЛЬКО для citable-категорий (info,
+                    transactional, edge_conflict), где ответ опирается на нормативку;
+                    в refusal/escalation/offtopic корректный ответ цитаты не содержит,
+                    там метрика неприменима (→ «—»). Осмысленно с реальным RAG;
   - judge (опц., --judge) — LLM-судья на GigaChat оценивает соответствие ответа
                     expected_behavior (0/1).
 
@@ -27,6 +30,11 @@ evaluate.py — E2E-оценка агента по qa.jsonl (задача 3.5 У
   python evaluate.py --mode stub
   python evaluate.py --mode gigachat --judge
   python evaluate.py --mode gigachat --limit 30 --categories info,transactional
+
+  # «Прогнать один раз»: дорогой проход агента сохраняется в eval_runs.json.
+  python evaluate.py --mode gigachat               # 1 раз: агент + RAG (+ кэш ответов)
+  python evaluate.py --from-runs --judge           # потом: судья/метрики без агента
+  python evaluate.py --from-runs                   # пересчёт метрик с кэша (бесплатно)
 """
 
 from __future__ import annotations
@@ -50,6 +58,14 @@ ALL_CATEGORIES = [
     "edge_no_data", "edge_conflict", "edge_manipulation", "offtopic",
 ]
 ESCALATION_CATEGORIES = {"escalation_sales", "escalation_negative"}
+
+# Категории, где правильный ответ ОПИРАЕТСЯ на нормативную базу — только здесь
+# citation осмысленна как метрика грунтинга. В остальных (escalation_*, edge_no_data,
+# edge_manipulation, offtopic) корректное поведение — эскалация / отказ / вежливое
+# перенаправление БЕЗ цитаты, а gold-референс носит справочный характер. Считать там
+# citation значит штрафовать за верное поведение (что и подтверждает judge: 75–100%).
+# Поэтому для них citation помечается «—», как escalation.
+CITABLE_CATEGORIES = {"info", "transactional", "edge_conflict"}
 
 # Категория → ожидаемый триггер эскалации (для проверки точности триггера).
 _CATEGORY_TO_TRIGGER = {
@@ -145,23 +161,40 @@ def evaluate(
     cases: list[dict],
     judge_fn=None,
     verbose: bool = False,
+    cached_runs: Optional[dict] = None,
 ) -> dict:
-    """Прогнать все кейсы и собрать метрики по категориям."""
+    """
+    Прогнать все кейсы и собрать метрики по категориям.
+
+    Дорогой проход агента (RAG + GigaChat) отделён от оценки: наблюдаемые ответы
+    собираются в `runs` (id → observed) и возвращаются, чтобы их можно было сохранить
+    и потом пересчитывать метрики / перепрогонять судью без повторного вызова агента
+    (см. cached_runs и флаги --runs/--from-runs). Если для кейса есть запись в
+    cached_runs — агент НЕ вызывается, берём готовый ответ.
+    """
     by_cat: dict[str, dict] = defaultdict(_blank_bucket)
     per_case: list[dict] = []
+    runs: dict[str, dict] = {}
 
     for i, case in enumerate(cases, 1):
         gold_category = case.get("category", "unknown")
         gold_outcome = case.get("expected_outcome_type")
-        # Устойчивость к транзиентным сбоям (сеть/GigaChat): один упавший кейс не
-        # должен ронять весь прогон из 180. Помечаем как промах и идём дальше.
-        try:
-            observed = run_case(graph, case)
-        except Exception as exc:  # noqa: BLE001
-            print(f"  [{case['id']}] сбой прогона: {exc} — помечаю как промах.")
-            observed = {"category": None, "escalation_trigger": None,
-                        "outcome_type": None, "answer": f"[ошибка прогона: {exc}]",
-                        "sources": [], "escalated": False}
+        case_id = case["id"]
+
+        if cached_runs is not None and case_id in cached_runs:
+            # Реплей: берём сохранённый ответ агента, граф не трогаем.
+            observed = cached_runs[case_id]
+        else:
+            # Устойчивость к транзиентным сбоям (сеть/GigaChat): один упавший кейс не
+            # должен ронять весь прогон из 180. Помечаем как промах и идём дальше.
+            try:
+                observed = run_case(graph, case)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [{case_id}] сбой прогона: {exc} — помечаю как промах.")
+                observed = {"category": None, "escalation_trigger": None,
+                            "outcome_type": None, "answer": f"[ошибка прогона: {exc}]",
+                            "sources": [], "escalated": False}
+        runs[case_id] = observed
 
         bucket = by_cat[gold_category]
         bucket["total"] += 1
@@ -178,8 +211,12 @@ def evaluate(
             escalation_ok = observed["escalated"] and observed["escalation_trigger"] in allowed
             bucket["escalation_hits"] += int(escalation_ok)
 
-        # Цитирование (RAG): применимо, если есть referenced_documents.
-        citation_ok = _citation_hit(observed["sources"], case.get("referenced_documents", []))
+        # Цитирование (RAG): осмысленно только в «отвечающих из нормативки»
+        # категориях (CITABLE_CATEGORIES). В refusal/escalation/offtopic корректный
+        # ответ не содержит цитаты — там метрику не считаем (→ «—»).
+        citation_ok = None
+        if gold_category in CITABLE_CATEGORIES:
+            citation_ok = _citation_hit(observed["sources"], case.get("referenced_documents", []))
         if citation_ok is not None:
             bucket["citation_total"] += 1
             bucket["citation_hits"] += int(citation_ok)
@@ -210,7 +247,7 @@ def evaluate(
         if i % 20 == 0:
             print(f"  ...{i}/{len(cases)}")
 
-    return {"by_category": dict(by_cat), "per_case": per_case}
+    return {"by_category": dict(by_cat), "per_case": per_case, "runs": runs}
 
 
 def _rate(hits: int, total: int) -> float:
@@ -287,16 +324,19 @@ def print_summary(summary: dict) -> None:
 
 # --- LLM-судья (опционально, gigachat-режим) -----------------------------------
 
-def make_judge():
+def make_judge(model: str = "GigaChat"):
     """
     Собрать LLM-судью на GigaChat. Градуированная оценка (0 / 0.5 / 1), чтобы
     отличать «по сути верно, но неполно» от провала и снизить шум бинарной метрики.
+
+    Судья — базовая GigaChat (Lite): дешевле и независим от модели агента (Pro),
+    что снижает риск «само себя хвалит». Модель явная, не зависит от дефолта фабрики.
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from agent.llm import build_gigachat_chat
 
-    chat = build_gigachat_chat(temperature=0.0)
+    chat = build_gigachat_chat(model=model, temperature=0.0)
     system = (
         "Ты — оценщик качества ответов банковского Помощника по кредитованию МСБ. "
         "Тебе дают ожидаемое поведение и фактический ответ. Оцени соответствие по сути "
@@ -368,29 +408,57 @@ def main() -> None:
                         help="Подмножество категорий через запятую.")
     parser.add_argument("--limit", type=int, default=None, help="Ограничить число кейсов.")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "eval_results.json")
+    parser.add_argument("--runs", type=Path, default=REPO_ROOT / "eval_runs.json",
+                        help="Файл-кэш ответов агента (сохраняется при прогоне, "
+                             "переиспользуется с --from-runs).")
+    parser.add_argument("--from-runs", action="store_true",
+                        help="Не вызывать агента: взять ответы из --runs (реплей) и "
+                             "только пересчитать метрики / прогнать судью. Дёшево.")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
     categories = set(args.categories.split(",")) if args.categories else None
     cases = load_cases(args.qa, categories, args.limit)
-    print(f"Режим: {args.mode}. Кейсов к прогону: {len(cases)}")
 
-    graph = build_eval_graph(args.mode, args.index_dir, args.db_path, args.top_k)
+    # Реплей из кэша: агента не поднимаем (нет затрат RAG/Pro), граф не нужен.
+    cached_runs = None
+    graph = None
+    if args.from_runs:
+        if not args.runs.exists():
+            raise SystemExit(f"--from-runs: файл прогонов {args.runs} не найден. "
+                             "Сначала сделай обычный прогон, чтобы его создать.")
+        cached = json.loads(args.runs.read_text(encoding="utf-8"))
+        cached_runs = cached.get("runs", cached)
+        print(f"Реплей из {args.runs}: {len(cached_runs)} сохранённых ответов "
+              f"(агент НЕ вызывается). Кейсов к оценке: {len(cases)}")
+    else:
+        print(f"Режим: {args.mode}. Кейсов к прогону: {len(cases)}")
+        graph = build_eval_graph(args.mode, args.index_dir, args.db_path, args.top_k)
 
     judge_fn = None
     if args.judge:
-        if args.mode != "gigachat":
-            print("ВНИМАНИЕ: --judge работает только в gigachat-режиме, игнорирую.")
+        # Судья работает и при реплее (читает сохранённые ответы). В stub-режиме без
+        # реплея судить нечего — RAG фейковый.
+        if args.mode != "gigachat" and not args.from_runs:
+            print("ВНИМАНИЕ: --judge работает в gigachat-режиме или с --from-runs, игнорирую.")
         else:
             judge_fn = make_judge()
 
-    results = evaluate(graph, cases, judge_fn=judge_fn, verbose=args.verbose)
+    results = evaluate(graph, cases, judge_fn=judge_fn, verbose=args.verbose,
+                       cached_runs=cached_runs)
     summary = summarize(results)
     print_summary(summary)
 
     out = {"mode": args.mode, "summary": summary, "per_case": results["per_case"]}
     args.out.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nДетальные результаты сохранены в {args.out}")
+
+    # Кэш ответов агента сохраняем только когда реально прогоняли агента (не реплей),
+    # чтобы один дорогой проход переиспользовать для пересчёта метрик и судьи.
+    if not args.from_runs:
+        runs_out = {"mode": args.mode, "runs": results["runs"]}
+        args.runs.write_text(json.dumps(runs_out, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Ответы агента (кэш для --from-runs) сохранены в {args.runs}")
 
 
 if __name__ == "__main__":

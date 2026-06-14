@@ -155,9 +155,8 @@ def get_eligible_products(
     has_account = bool(profile.get("has_account_in_bank"))
     account_months = _months_since(profile.get("account_open_date"), today) if has_account else None
     turnover = profile.get("avg_monthly_turnover") or 0
-    existing_debt = sum(l.get("principal_outstanding") or 0
-                        for l in get_active_loans(client_id, db_path))
     loans = get_active_loans(client_id, db_path)
+    existing_debt = sum(l.get("principal_outstanding") or 0 for l in loans)
     has_active_start = any(l.get("product_code") == "BUSINESS_START" for l in loans)
     has_overdraft = any(l.get("product_code") == "BUSINESS_LIMIT" for l in loans)
 
