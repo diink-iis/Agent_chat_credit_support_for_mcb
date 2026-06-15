@@ -515,11 +515,14 @@ st.markdown(
 
       /* Профиль пользователя — закреплён у нижнего края сайдбара (sidebar = position:relative).
          Список диалогов скроллится над ним; padding-bottom контента не даёт ему заехать под карточку. */
-      [data-testid="stSidebarUserContent"]{ padding-bottom:80px !important; }
+      /* overflow:visible — чтобы прокручиваемый контейнер не срезал absolute-карточку
+         (иначе её правый край режется прямой → острые углы, а низ поджимает аватар) */
+      [data-testid="stSidebarUserContent"]{ padding-bottom:80px !important; overflow:visible !important; }
       section[data-testid="stSidebar"] .st-key-profilebar{
         position:absolute !important; left:12px; right:12px; bottom:12px; z-index:4;
+        box-sizing:border-box !important;
         background:var(--surface) !important; border:1px solid var(--border) !important;
-        border-radius:14px !important; padding:8px 12px !important; box-shadow:var(--shadow-sm);
+        border-radius:14px !important; padding:9px 12px !important; box-shadow:var(--shadow-sm);
         overflow:hidden !important; display:flex !important; align-items:center !important;
         transition:border-color .14s, box-shadow .14s; }
       section[data-testid="stSidebar"] .st-key-profilebar:hover{
@@ -674,18 +677,77 @@ if "auth_client" not in ss:          # кто «вошёл»: client_id или N
 @st.dialog("Вход в бизнес-кабинет")
 def login_dialog() -> None:
     """Спросить, под какого сценарного клиента авторизоваться. Демо-замена реального
-    логина: список берётся из БД (C-000001…C-000035)."""
+    логина: список берётся из БД (C-000001…C-000035). Оформление — под референс
+    ui/ref/AI МСБ - Окно авторизации (standalone)-2.html."""
     clients = load_scenario_clients()
     if not clients:
         st.error("База клиентов недоступна — войти нельзя.")
         return
+    # CSS окна (прицел по :has(.st-key-login_confirm) — только это диалоговое окно).
+    # Свой заголовок рисуем сами, штатный h2 от st.dialog прячем.
+    st.markdown(
+        """<style>
+        div[role="dialog"]:has(.st-key-login_confirm){ border-radius:20px !important; }
+        /* штатный заголовок st.dialog — это markdown-label в шапке (вне stVerticalBlock);
+           прячем его, свой заголовок рисуем ниже. «×» (BaseWeb) остаётся. */
+        div[role="dialog"]:has(.st-key-login_confirm)
+          [data-testid="stMarkdownContainer"]:not([data-testid="stVerticalBlock"] *){ display:none !important; }
+        .loginbrand{ display:flex; align-items:center; gap:10px; margin:0 0 14px; }
+        .loginlogo{ width:42px; height:42px; flex:0 0 auto; border-radius:12px;
+          background:linear-gradient(150deg,#37A86E,#0F9650); display:flex;
+          align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(15,150,80,.24); }
+        .loginlogo img{ width:25px; height:25px; object-fit:contain; filter:brightness(0) invert(1); }
+        .loginwm-name{ font-size:18px; font-weight:800; letter-spacing:-.02em;
+          color:var(--text); line-height:1; }
+        .loginwm-name span{ color:var(--accent); }
+        .loginwm-sub{ font-size:9px; font-weight:600; letter-spacing:.12em;
+          text-transform:uppercase; color:var(--text-3); margin-top:4px; }
+        .logintitle{ font-size:24px; font-weight:800; letter-spacing:-.02em;
+          color:var(--text); line-height:1.1; margin:0 0 5px; }
+        .loginsub{ font-size:13.5px; color:var(--text-2); line-height:1.4; margin:0 0 14px; }
+        .loginfoot{ text-align:center; font-size:11.5px; color:var(--text-3); margin-top:12px; }
+        /* подпись поля */
+        .st-key-login_pick label p{ font-size:13px !important; font-weight:700 !important;
+          color:var(--text) !important; }
+        /* селект — зелёный оттенок (как в референсе), скруглённый, зелёная рамка */
+        .st-key-login_pick [data-baseweb="select"] > div{
+          border-radius:12px !important; border:1.5px solid var(--accent-line) !important;
+          min-height:44px !important; background:var(--accent-tint) !important; box-shadow:none !important; }
+        .st-key-login_pick [data-baseweb="select"] > div:focus-within{
+          border-color:var(--accent) !important; box-shadow:0 0 0 3px rgba(15,150,80,.12) !important; }
+        /* кнопка «Войти» — сплошная зелёная */
+        .st-key-login_confirm button{
+          background:var(--accent) !important; color:#fff !important; border:none !important;
+          border-radius:12px !important; height:48px !important; margin-top:4px !important;
+          box-shadow:0 7px 16px rgba(15,150,80,.22) !important; transition:background .14s, box-shadow .14s; }
+        .st-key-login_confirm button:hover{
+          background:var(--accent-dark) !important; box-shadow:0 9px 20px rgba(15,150,80,.28) !important; }
+        .st-key-login_confirm button p{ color:#fff !important; font-weight:700 !important; font-size:15px !important; }
+        </style>""",
+        unsafe_allow_html=True,
+    )
+    # Шапка: лого-плашка + вордмарк, заголовок, подзаголовок.
+    st.markdown(
+        f'<div class="loginbrand">'
+        f'<div class="loginlogo"><img src="{logo_data_uri()}" alt="МСБ.ai"/></div>'
+        f'<div><div class="loginwm-name">МСБ<span>.ai</span></div>'
+        f'<div class="loginwm-sub">Кредитный ассистент</div></div></div>'
+        f'<div class="logintitle">Вход в бизнес-кабинет</div>'
+        f'<div class="loginsub">Авторизуйтесь, чтобы продолжить работу с кредитным ассистентом.</div>',
+        unsafe_allow_html=True,
+    )
     labels = [label for _, label in clients]
     # Если повторный вход — предвыбрать прошлого клиента, иначе первого.
     prev = ss.get("last_auth_client", DEFAULT_CLIENT)
     prev_idx = next((i for i, (cid, _) in enumerate(clients) if cid == prev), 0)
     choice = st.selectbox("Выберите клиента", labels, index=prev_idx, key="login_pick")
     st.caption("Демо: авторизация под выбранным сценарным клиентом.")
-    if st.button("Войти", type="primary", use_container_width=True, key="login_confirm"):
+    clicked = st.button("Войти  →", type="primary", use_container_width=True, key="login_confirm")
+    st.markdown(
+        '<div class="loginfoot">🔒 Защищённое соединение · 256-bit TLS</div>',
+        unsafe_allow_html=True,
+    )
+    if clicked:
         cid = clients[labels.index(choice)][0]
         ss.auth_client = cid
         ss.last_auth_client = cid
@@ -770,7 +832,10 @@ with st.sidebar:
                 f"<style>.st-key-{active['id']} button{{background:var(--accent-tint)!important;"
                 f"color:var(--accent-dark)!important;font-weight:600!important;"
                 f"justify-content:flex-start!important;text-align:left!important;"
-                f"padding-left:12px!important;}}</style>",
+                f"padding-left:12px!important;}}"
+                f".st-key-{active['id']} button [data-testid=\"stMarkdownContainer\"]{{"
+                f"width:100%!important;text-align:left!important;}}"
+                f".st-key-{active['id']} button p{{text-align:left!important;}}</style>",
                 unsafe_allow_html=True,
             )
         for conv in reversed(shown):  # новые сверху
