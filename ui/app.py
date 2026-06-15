@@ -515,25 +515,41 @@ st.markdown(
 
       /* Профиль пользователя — закреплён у нижнего края сайдбара (sidebar = position:relative).
          Список диалогов скроллится над ним; padding-bottom контента не даёт ему заехать под карточку. */
-      [data-testid="stSidebarUserContent"]{ padding-bottom:78px !important; }
+      [data-testid="stSidebarUserContent"]{ padding-bottom:80px !important; }
       section[data-testid="stSidebar"] .st-key-profilebar{
-        position:absolute !important; left:14px; right:14px; bottom:12px; z-index:4;
-        background:var(--surface); border:1px solid var(--border); border-radius:12px;
-        padding:7px 10px; box-shadow:var(--shadow-sm); }
+        position:absolute !important; left:12px; right:12px; bottom:12px; z-index:4;
+        background:var(--surface) !important; border:1px solid var(--border) !important;
+        border-radius:14px !important; padding:8px 12px !important; box-shadow:var(--shadow-sm);
+        overflow:hidden !important; display:flex !important; align-items:center !important;
+        transition:border-color .14s, box-shadow .14s; }
+      section[data-testid="stSidebar"] .st-key-profilebar:hover{
+        border-color:var(--accent-line) !important; box-shadow:var(--shadow-md); }
+      /* внутренние блоки прозрачны/без отступов — иначе их квадратные углы налезают на скругление */
+      .st-key-profilebar [data-testid="stVerticalBlock"]{
+        width:100% !important; gap:0 !important; background:transparent !important; }
+      .st-key-profilebar [data-testid="stHorizontalBlock"]{
+        width:100% !important; gap:6px !important; align-items:center !important; margin:0 !important; }
+      .st-key-profilebar [data-testid="stColumn"]{ align-self:center !important; background:transparent !important; }
+      .st-key-profilebar [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child{
+        display:flex; align-items:center; justify-content:flex-end; }
       .profile{ display:flex; align-items:center; gap:10px; min-width:0; }
-      .profile-av{ width:32px; height:32px; flex:0 0 auto; border-radius:50%;
-        background:var(--accent); color:#fff; font-weight:700; font-size:12.5px;
-        display:flex; align-items:center; justify-content:center; letter-spacing:.02em; }
-      .profile-av.guest{ background:var(--text-3); }
-      .profile-txt{ display:flex; flex-direction:column; min-width:0; line-height:1.2; }
-      .profile-name{ font-size:13px; font-weight:600; color:var(--text);
+      /* аватар — мягкий зелёный диск (приглушённый градиент, без резкого неона) */
+      .profile-av{ width:34px; height:34px; flex:0 0 auto; border-radius:50%;
+        background:linear-gradient(150deg,#5FBE8C,#2F9E66); color:#fff; font-weight:700;
+        font-size:12.5px; display:flex; align-items:center; justify-content:center;
+        letter-spacing:.02em; }
+      .profile-av.guest{ background:#B9C2BD; }
+      .profile-txt{ display:flex; flex-direction:column; min-width:0; line-height:1.25; }
+      .profile-name{ font-size:13.5px; font-weight:600; color:var(--text);
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .profile-sub{ font-size:11px; color:var(--text-3);
+      .profile-sub{ font-size:11px; color:var(--text-3); margin-top:1px;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      /* кнопка входа/выхода — компактная иконка без рамки */
+      /* кнопка входа/выхода — круглая иконка-таргет, проявляется на hover */
       .st-key-logout button, .st-key-login button{
         border:none !important; background:none !important; box-shadow:none !important;
-        color:var(--text-3) !important; padding:4px !important; min-height:0 !important; }
+        color:var(--text-3) !important; width:34px !important; height:34px !important;
+        min-height:0 !important; padding:0 !important; border-radius:50% !important;
+        display:flex !important; align-items:center; justify-content:center; }
       .st-key-logout button:hover{ color:#C0392B !important; background:#FBEAEA !important; }
       .st-key-login button:hover{ color:var(--accent-dark) !important; background:var(--accent-tint) !important; }
 
@@ -575,13 +591,13 @@ st.markdown(
       section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] [data-testid="column"]:last-child button:hover{
         color:#C0392B; background:#FBEAEA; }
 
-      /* Кнопки-подсказки в главной области — карточки */
+      /* Кнопки-подсказки в главной области — лёгкие ghost-чипы (не тяжёлые карточки) */
       .block-container .stButton button{
-        border:1px solid var(--border); background:#fff; color:var(--text); border-radius:var(--radius);
-        box-shadow:var(--shadow-sm); font-weight:500; padding:13px 16px;
-        transition:border-color .14s, box-shadow .14s, transform .12s; }
+        border:1px solid var(--border); background:rgba(16,42,28,.018); color:var(--text-2);
+        border-radius:12px; box-shadow:none; font-weight:500; font-size:13.5px; padding:11px 15px;
+        transition:border-color .14s, background .14s, color .14s; }
       .block-container .stButton button:hover{
-        border-color:var(--accent-line); box-shadow:var(--shadow-md); transform:translateY(-1px); color:var(--text); }
+        border-color:var(--accent-line); background:var(--accent-tint); color:var(--accent-dark); }
 
       /* Реплики: юзер — пузырь у крайне правого края, ассистент — текст слева */
       [data-testid="stChatMessage"]{ background:transparent; padding:6px 0; }
@@ -670,9 +686,11 @@ def login_dialog() -> None:
     choice = st.selectbox("Выберите клиента", labels, index=prev_idx, key="login_pick")
     st.caption("Демо: авторизация под выбранным сценарным клиентом.")
     if st.button("Войти", type="primary", use_container_width=True, key="login_confirm"):
-        ss.auth_client = clients[labels.index(choice)][0]
-        ss.last_auth_client = ss.auth_client
+        cid = clients[labels.index(choice)][0]
+        ss.auth_client = cid
+        ss.last_auth_client = cid
         ss.pop("pending", None)
+        # Диалоги нового профиля подхватит резолв активного диалога (свои чаты).
         st.rerun()
 
 # --- Сайдбар: бренд + «Новый диалог»; параметры сессии — только в режиме разработчика ---
@@ -695,19 +713,19 @@ client_id = ss.auth_client
 channel = DEFAULT_CHANNEL if client_id else "chat_site"
 dev_mode = False
 
-# --- Резолвим активный диалог. Прошлые не теряются: лежат в ss.conversations. ---
+# --- Резолвим активный диалог. У каждого профиля (client_id) — своя история. ---
+# Диалог самодостаточен: хранит СВОЮ личность (channel/client_id), под которой идут
+# его ходы (см. stream_turn). При смене профиля (вход/выход) показываем диалоги нового
+# профиля: открываем его последний диалог или заводим свежий. Клик по диалогу внутри
+# профиля просто открывает его (список и так отфильтрован по client_id).
 active = ss.conversations.get(ss.active_id)
-if active is None:
-    active = new_conversation(mode, channel, client_id)
-elif not active["history"]:
-    # Активный диалог ещё пуст — просто подхватываем текущие параметры (dev может менять).
-    active.update(mode=mode, channel=channel, client_id=client_id)
-elif (active["channel"], active["client_id"]) != (channel, client_id):
-    # Сменили ИДЕНТИЧНОСТЬ (канал/клиент) на непустом диалоге — это новый диалог.
-    active = new_conversation(mode, channel, client_id)
-else:
-    # Та же идентичность — допускаем лишь смену режима LLM внутри текущего диалога.
-    active["mode"] = mode
+if active is None or active.get("client_id") != client_id:
+    own = [c for c in ss.conversations.values() if c.get("client_id") == client_id]
+    if own:
+        active = own[-1]                 # последний диалог этого профиля
+        ss.active_id = active["id"]
+    else:
+        active = new_conversation(mode, channel, client_id)
 
 # Прогреваем граф для режима активного диалога; ошибку (нет ключа GigaChat) показываем.
 graph_error = None
@@ -728,7 +746,8 @@ with st.sidebar:
     query = st.text_input("Поиск по диалогам", placeholder="Поиск по диалогам…",
                           label_visibility="collapsed", key="convsearch").strip().lower()
     st.caption("История диалогов")
-    convs = list(ss.conversations.values())
+    # Показываем только диалоги текущего профиля (client_id), а не все вперемешку.
+    convs = [c for c in ss.conversations.values() if c.get("client_id") == client_id]
 
     def _matches(c: dict) -> bool:
         """Совпадение по заголовку или по тексту любой реплики (без учёта регистра)."""
@@ -788,6 +807,7 @@ with st.sidebar:
                 ss.last_auth_client = ss.auth_client   # запомним для предвыбора при входе
                 ss.auth_client = None
                 ss.pop("pending", None)
+                # Гостевые диалоги подхватит резолв активного диалога (своя история).
                 st.rerun()
         else:
             if acol.button("", icon=":material/login:", key="login",
@@ -819,7 +839,7 @@ if not active["history"] and not prompt:
         f'<div class="hero">'
         f'<img class="hero-orb" src="{logo_data_uri()}" alt="МСБ.ai"/>'
         f'<div class="hero-title">Чем помочь <span>по кредитованию</span>?</div>'
-        f'<div class="hero-sub">Продукты, ставки, статус заявки, досрочное погашение — спрашивайте</div>'
+        f'<div class="hero-sub">Задайте вопрос или выберите подсказку ниже</div>'
         f'</div>',
         unsafe_allow_html=True,
     )

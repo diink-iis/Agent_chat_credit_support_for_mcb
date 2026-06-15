@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -74,6 +76,48 @@ def load_collision_rule() -> str:
 def _strip_fences(text: str) -> str:
     """Убрать markdown-ограждения ```json ... ``` из ответа LLM."""
     return text.replace("```json", "").replace("```", "").strip()
+
+
+# Внутренние идентификаторы нормативки (имена файлов, номера пунктов) — служебные
+# ссылки; клиенту их показывать не нужно. Чистим ИТОГОВЫЙ ответ генератора. Источники
+# остаются в scope_tags (dev-режим / аудит / метрика citation) — там их не трогаем.
+_DOC_FILE_RE = re.compile(r"\b\d{1,2}_[A-Za-zА-Яа-я_]+\.md(?:#[\d.]+)?")
+_TRAILING_CLAUSE_RE = re.compile(
+    r"\s*[—–\-,]?\s*п\.?\s*\d+(?:\.\d+)*(?:\s*[—–\-]\s*\d+(?:\.\d+)*)?\s*(?=\))", re.I)
+
+
+def _strip_internal_refs(text: str) -> str:
+    """Убрать из ответа клиенту служебные ссылки на внутренние документы/пункты."""
+    if not text:
+        return text
+    text = _DOC_FILE_RE.sub("", text)                 # 03_early_repayment.md#1.3
+    text = re.sub(r"документ#пункт", "", text, flags=re.I)
+    text = _TRAILING_CLAUSE_RE.sub("", text)          # висящий «(... — п. 4.2.3 )»
+    text = re.sub(r"\(\s*\)", "", text)               # пустые скобки
+    text = re.sub(r"\s+([.,;:)])", r"\1", text)        # пробел перед пунктуацией
+    text = re.sub(r"\(\s+", "(", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
+def _invoke_retry(chat, messages, attempts: int = 3):
+    """
+    Вызвать chat.invoke с ретраем транзиентных сбоев (SSL EOF, кратковременные 5xx).
+
+    Без ретрая короткий обрыв соединения с GigaChat ронял classify на baseline и
+    обнулял RAG-генерацию (наблюдалось в UI). Ретраим только сетевой вызов; парсинг
+    ответа делает вызывающий код. Если все попытки провалились — пробрасываем
+    исключение, чтобы сработал штатный откат (baseline/шаблон).
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return chat.invoke(messages)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(0.6 * (attempt + 1))  # 0.6s, 1.2s бэкофф
+    raise last_exc
 
 
 def build_gigachat_chat(model: str = "GigaChat", temperature: float = 0.0):
@@ -201,13 +245,13 @@ def make_gigachat_classifier(chat=None) -> Callable[[AgentState], dict]:
             "Верни ТОЛЬКО JSON по схеме из инструкции, без markdown и пояснений."
         )
         try:
-            response = chat.invoke([
+            response = _invoke_retry(chat, [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
             ])
             data = json.loads(_strip_fences(response.content))
         except Exception as exc:  # noqa: BLE001 — любой сбой → безопасный откат
-            logger.warning("classify: сбой GigaChat/JSON (%s) — откат на baseline.", exc)
+            logger.warning("classify: сбой GigaChat/JSON после ретраев (%s) — откат на baseline.", exc)
             return rule_based_classify(state)
 
         category = data.get("category")
@@ -279,7 +323,12 @@ def make_gigachat_generator(chat=None) -> Callable[[AgentState], str]:
         # данных клиента — НЕ зовём модель «по памяти»: без контекста она фабрикует
         # несуществующие продукты и номера документов (наблюдалось в UI: «Экспресс-Кредит»,
         # «Документ № 101-БС»). Вместо догадки — честная деградация.
-        needs_grounding = bool(state.get("needs_rag")) or state.get("category") in {"info", "edge_conflict"}
+        # Грунтинг требуется ТОЛЬКО если классификатор запросил RAG (needs_rag=True),
+        # но контекст пуст — это реальный сбой эмбеддингов/ретривера (риск выдумок).
+        # НЕ привязываемся к category=info: часть info-вопросов (напр. о работе самого
+        # ассистента — «в каких случаях переводишь на менеджера») классификатор
+        # помечает needs_rag=False и отвечает из системного промпта; деградация там ложная.
+        needs_grounding = bool(state.get("needs_rag"))
         if (needs_grounding and not context and not has_data
                 and not tool_results.get("access_denied")):
             logger.warning("generate: нет RAG-контекста и данных клиента — "
@@ -307,16 +356,17 @@ def make_gigachat_generator(chat=None) -> Callable[[AgentState], str]:
             label = ("Нормативка (для процедур/условий; по статусу/остатку приоритет "
                      "у данных клиента выше)") if has_data else "Источники из базы знаний"
             user_parts.append(f"\n{label}:\n{context}")
-        user_parts.append("\nОтветь кратко и точно, цитируя источники (документ#пункт).")
+        user_parts.append("\nОтветь кратко и точно по источникам. НЕ указывай в ответе "
+                          "имена внутренних документов/файлов и номера их пунктов.")
 
         try:
-            response = chat.invoke([
+            response = _invoke_retry(chat, [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content="\n".join(user_parts)),
             ])
-            return response.content
+            return _strip_internal_refs(response.content)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("generate: сбой GigaChat (%s) — откат на шаблон.", exc)
+            logger.warning("generate: сбой GigaChat после ретраев (%s) — откат на шаблон.", exc)
             return template_generate(state)
 
     return generate
@@ -333,9 +383,9 @@ def make_gigachat_deps(
     Собрать GraphDeps для прода: реальный Retriever Участника 1 + GigaChat-узлы.
     Один чат-клиент переиспользуется для classify и generate.
 
-    База агента — GigaChat-Pro; судья при оценке работает на GigaChat-Max
-    (см. evaluate.make_judge). Модель можно переопределить аргументом `model`
-    или переменной окружения GIGACHAT_MODEL.
+    База агента — GigaChat-Pro (выше потолок на пограничных intent↔info кейсах);
+    судья при оценке остаётся на Lite (см. evaluate.make_judge). Модель можно
+    переопределить аргументом `model` или переменной окружения GIGACHAT_MODEL.
     """
     from rag import Retriever  # ленивый импорт (тянет chromadb)
 

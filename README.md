@@ -24,14 +24,11 @@ README.md
 Чат-интерфейс поверх графа агента — [ui/app.py](ui/app.py). Запускается из корня репозитория:
 
 ```bash
-# 1. Виртуальное окружение (один раз)
-python3 -m venv .venv
-source .venv/bin/activate                     # Windows: .venv\Scripts\activate
+# 1. Зависимости (один раз). Рекомендуется venv.
+pip install -r agent/requirements.txt -r ui/requirements.txt
+pip install -r rag/requirements.txt          # нужно для боевого режима (GigaChat)
 
-# 2. Зависимости проекта (RAG + граф + UI) — один файл
-pip install -r requirements.txt
-
-# 3. Запуск
+# 2. Запуск
 streamlit run ui/app.py                       # откроется http://localhost:8501
 ```
 
