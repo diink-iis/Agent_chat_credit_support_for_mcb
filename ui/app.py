@@ -457,18 +457,23 @@ st.markdown(
         z-index:5; margin:0 !important; }
       /* Сайдбар: схлопываем верхнюю шапку и паддинг, чтобы бренд был у самого верха */
       [data-testid="stSidebarHeader"]{ height:0 !important; min-height:0 !important; padding:0 !important; }
-      [data-testid="stSidebarUserContent"]{ padding-top:8px !important; }
+      [data-testid="stSidebarUserContent"]{ padding-top:6px !important; }
       section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top:0 !important; }
+      /* разделитель под брендом — выше и компактнее, без лишнего воздуха */
+      section[data-testid="stSidebar"] hr{ margin:6px 0 10px !important; }
 
       /* Бренд: лого-«росток» + вордмарк «МСБ.ai» + подпись (по центру, как на слайде) */
-      /* бренд закреплён слева — не «бегает» при изменении ширины сайдбара */
-      .brand{ display:flex; align-items:center; justify-content:flex-start; gap:12px; margin:0 0 12px; }
-      .brand-logo{ width:42px; height:42px; flex:0 0 auto; object-fit:contain; }
+      /* бренд закреплён слева — не «бегает» при изменении ширины сайдбара.
+         align-items:center + лёгкий подъём лого: его центр совпадает с центром
+         вордмарка «МСБ.ai», а не со всем блоком (иначе росток визуально ниже текста). */
+      .brand{ display:flex; align-items:center; justify-content:flex-start; gap:11px; margin:0 0 4px; }
+      .brand-logo{ width:40px; height:40px; flex:0 0 auto; object-fit:contain;
+        transform:translateY(-5px); }
       .brand-text{ display:flex; flex-direction:column; line-height:1.05; }
       .brand-name{ font-weight:800; font-size:23px; letter-spacing:-.02em; color:var(--text); }
       .brand-name span{ color:var(--accent); }
       .brand-sub{ font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
-        color:var(--text-3); margin-top:3px; }
+        color:var(--text-3); margin-top:2px; }
 
       /* Поле поиска по диалогам */
       section[data-testid="stSidebar"] [data-testid="stTextInput"] input{
@@ -487,8 +492,9 @@ st.markdown(
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
       /* заголовки диалогов в истории — метка на всю ширину, начало закреплено слева,
          обрезается только конец (text-overflow), поэтому при расширении видно больше с начала */
-      section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button{
-        justify-content:flex-start !important; }
+      section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button,
+      section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] [data-testid="column"]:first-child button{
+        justify-content:flex-start !important; text-align:left !important; padding-left:12px !important; }
       section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button [data-testid="stMarkdownContainer"]{
         width:100% !important; text-align:left !important; }
       section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button p{
@@ -657,7 +663,9 @@ with st.sidebar:
         if active:
             st.markdown(
                 f"<style>.st-key-{active['id']} button{{background:var(--accent-tint)!important;"
-                f"color:var(--accent-dark)!important;font-weight:600!important;}}</style>",
+                f"color:var(--accent-dark)!important;font-weight:600!important;"
+                f"justify-content:flex-start!important;text-align:left!important;"
+                f"padding-left:12px!important;}}</style>",
                 unsafe_allow_html=True,
             )
         for conv in reversed(shown):  # новые сверху
