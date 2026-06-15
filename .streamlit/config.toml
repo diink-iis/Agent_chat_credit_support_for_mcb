@@ -10,9 +10,9 @@ runOnSave = true
 toolbarMode = "minimal"
 
 [theme]
-# Палитра референса (ui/ref): эмеральд-зелёный на зелёно-белом фоне.
+# Палитра референса «Чат редизайн»: эмеральд-зелёный на мятном фоне, шрифт Manrope.
 primaryColor = "#0F9650"
-backgroundColor = "#f4f7f4"
-secondaryBackgroundColor = "#fbfcfb"
-textColor = "#15201a"
+backgroundColor = "#EDF3EF"
+secondaryBackgroundColor = "#EDF3EF"
+textColor = "#16241C"
 font = "sans serif"
