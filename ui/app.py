@@ -439,20 +439,19 @@ st.markdown(
          У stMain emotion задаёт width:100% и height:100dvh, поэтому ширину/высоту
          пересчитываем через calc() с учётом полей — иначе правый/нижний край уходят за экран. */
       .stApp section.stMain, .stApp [data-testid="stMain"]{
-        background:var(--surface) !important; border:1px solid var(--border) !important;
-        border-radius:12px !important; box-shadow:var(--shadow-md) !important;
+        background:var(--surface) !important; border:1px solid var(--border-strong) !important;
+        border-radius:12px !important; box-shadow:var(--shadow-lg) !important;
         width:calc(100% - 24px) !important; height:calc(100dvh - 24px) !important;
         margin:12px !important; }
       /* нижняя панель (поле ввода) — прозрачная, чтобы был виден белый блок */
       [data-testid="stBottom"], [data-testid="stBottom"] > div,
       [data-testid="stBottomBlockContainer"]{ background:transparent !important; }
 
-      /* Сайдбар — тоже отдельный белый блок со скруглением 12px (как чат) */
+      /* Сайдбар сливается с фоном — без границ и карточки (как в референсе).
+         Единственный выделенный блок-карточка — область чата (main). */
       section[data-testid="stSidebar"]{
-        background:var(--surface) !important; border:1px solid var(--border) !important;
-        border-radius:12px !important; box-shadow:var(--shadow-md) !important;
-        margin:12px 0 12px 12px !important; height:calc(100dvh - 24px) !important;
-        position:relative !important; }
+        background:var(--bg-app) !important; border:none !important;
+        box-shadow:none !important; position:relative !important; }
       /* Кнопка сворачивания — внутрь карточки (верх-право), а не за её краем */
       [data-testid="stSidebarCollapseButton"]{ position:absolute !important; top:8px; right:8px;
         z-index:5; margin:0 !important; }
@@ -462,13 +461,21 @@ st.markdown(
       section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{ padding-top:0 !important; }
 
       /* Бренд: лого-«росток» + вордмарк «МСБ.ai» + подпись (по центру, как на слайде) */
-      .brand{ display:flex; align-items:center; justify-content:center; gap:12px; margin:0 0 12px; }
+      /* бренд закреплён слева — не «бегает» при изменении ширины сайдбара */
+      .brand{ display:flex; align-items:center; justify-content:flex-start; gap:12px; margin:0 0 12px; }
       .brand-logo{ width:42px; height:42px; flex:0 0 auto; object-fit:contain; }
       .brand-text{ display:flex; flex-direction:column; line-height:1.05; }
       .brand-name{ font-weight:800; font-size:23px; letter-spacing:-.02em; color:var(--text); }
       .brand-name span{ color:var(--accent); }
       .brand-sub{ font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
         color:var(--text-3); margin-top:3px; }
+
+      /* Поле поиска по диалогам */
+      section[data-testid="stSidebar"] [data-testid="stTextInput"] input{
+        background:var(--surface) !important; border:1px solid var(--border) !important;
+        border-radius:10px !important; font-size:13.5px !important; color:var(--text) !important; }
+      section[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus{
+        border-color:var(--accent-line) !important; box-shadow:none !important; }
 
       /* Кнопки сайдбара — плоские строки навигации */
       section[data-testid="stSidebar"] .stButton button{
@@ -478,6 +485,14 @@ st.markdown(
         background:rgba(16,42,28,.045); color:var(--text); border-color:transparent; }
       section[data-testid="stSidebar"] .stButton button p{
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+      /* заголовки диалогов в истории — метка на всю ширину, начало закреплено слева,
+         обрезается только конец (text-overflow), поэтому при расширении видно больше с начала */
+      section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button{
+        justify-content:flex-start !important; }
+      section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button [data-testid="stMarkdownContainer"]{
+        width:100% !important; text-align:left !important; }
+      section[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button p{
+        text-align:left !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       /* «Новый диалог» — лёгкая кнопка (карандаш + светлый фон), как в референсе */
       .st-key-newdlg button{ background:var(--surface)!important; border:1px solid var(--border)!important;
         color:var(--text)!important; font-weight:600!important; justify-content:flex-start!important;
@@ -618,10 +633,24 @@ with st.sidebar:
         if active["history"]:
             new_conversation(mode, channel, client_id)
             st.rerun()
+    query = st.text_input("Поиск по диалогам", placeholder="Поиск по диалогам…",
+                          label_visibility="collapsed", key="convsearch").strip().lower()
     st.caption("История диалогов")
     convs = list(ss.conversations.values())
-    if len(convs) == 1 and not convs[0]["history"]:
+
+    def _matches(c: dict) -> bool:
+        """Совпадение по заголовку или по тексту любой реплики (без учёта регистра)."""
+        if not query:
+            return True
+        if query in c["title"].lower():
+            return True
+        return any(query in (m.get("content") or "").lower() for m in c["history"])
+
+    shown = [c for c in convs if _matches(c)]
+    if not query and len(convs) == 1 and not convs[0]["history"]:
         st.caption("Пока пусто — начните диалог.")
+    elif query and not shown:
+        st.caption("Ничего не найдено.")
     else:
         # Единый список: все строки — кнопки одинаковой формы; активная подсвечена
         # через её st-key-класс (Streamlit вешает .st-key-<key> на контейнер виджета).
@@ -631,7 +660,7 @@ with st.sidebar:
                 f"color:var(--accent-dark)!important;font-weight:600!important;}}</style>",
                 unsafe_allow_html=True,
             )
-        for conv in reversed(convs):  # новые сверху
+        for conv in reversed(shown):  # новые сверху
             row_open, row_del = st.columns([0.82, 0.18])
             if row_open.button(conv["title"], key=conv["id"], use_container_width=True):
                 if ss.active_id != conv["id"]:
@@ -685,7 +714,9 @@ if not active["history"] and not prompt:
 if prompt:
     active["history"].append({"role": "user", "content": prompt})
     if active["title"] == "Новый диалог":
-        active["title"] = prompt[:32] + "…" if len(prompt) > 33 else prompt
+        # храним полный текст — обрезку по ширине делает CSS (text-overflow:ellipsis),
+        # поэтому при расширении сайдбара видно больше текста.
+        active["title"] = prompt.strip()
     with st.chat_message("user"):
         st.markdown(prompt)
 

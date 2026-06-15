@@ -224,14 +224,28 @@ def retrieve_rag_node(state: AgentState, deps: GraphDeps) -> dict:
     query = build_query_from_history(rag_case)
     product_filter = state.get("detected_product") or detect_product(query)
 
-    # Устойчивость к сбою поиска/эмбеддингов (сеть/GigaChat): не роняем граф, а
-    # деградируем — отдаём пустой контекст. Генератор по промпту честно скажет, что
-    # не может подтвердить факт, либо ответит из данных клиента (п. 4.4.3, 6.3).
-    try:
-        hits = deps.retriever.retrieve(query=query, product_filter=product_filter, k=deps.top_k)
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger("agent.nodes").warning("retrieve_rag: сбой поиска (%s) — пустой контекст.", exc)
+    # Устойчивость к сбою поиска/эмбеддингов (сеть/GigaChat): сначала РЕТРАИМ
+    # транзиентные сбои (наблюдались SSL EOF, кратковременные 5xx) — без ретрая первый
+    # же сбой гасит RAG в пустой контекст и теряет кейс (в боевом прогоне это стоило
+    # ~14 п.п. citation). Только если все попытки провалились — деградируем: отдаём
+    # пустой контекст, генератор честно скажет, что не может подтвердить факт, либо
+    # ответит из данных клиента (п. 4.4.3, 6.3).
+    import logging
+    import time
+
+    logger = logging.getLogger("agent.nodes")
+    hits = None
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            hits = deps.retriever.retrieve(query=query, product_filter=product_filter, k=deps.top_k)
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))  # 0.5s, 1.0s бэкофф
+    if hits is None:
+        logger.warning("retrieve_rag: сбой поиска после ретраев (%s) — пустой контекст.", last_exc)
         return {"retrieved_context": "", "scope_tags": [], "retrieved_count": 0}
 
     context_parts: list[str] = []

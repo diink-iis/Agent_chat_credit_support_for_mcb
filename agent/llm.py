@@ -272,6 +272,23 @@ def make_gigachat_generator(chat=None) -> Callable[[AgentState], str]:
             tool_results.get("profile") or tool_results.get("loans")
             or tool_results.get("applications") or tool_results.get("eligible_products")
         )
+
+        # Жёсткая защита от выдумок при отсутствии грунтинга (п. 6.3, 4.4.3). Если вопрос
+        # требует нормативной базы, но RAG не вернул контекст (сбой эмбеддингов/ретривера,
+        # напр. HTTP 402 — retrieve_rag деградирует в пустой контекст) И нет авторитетных
+        # данных клиента — НЕ зовём модель «по памяти»: без контекста она фабрикует
+        # несуществующие продукты и номера документов (наблюдалось в UI: «Экспресс-Кредит»,
+        # «Документ № 101-БС»). Вместо догадки — честная деградация.
+        needs_grounding = bool(state.get("needs_rag")) or state.get("category") in {"info", "edge_conflict"}
+        if (needs_grounding and not context and not has_data
+                and not tool_results.get("access_denied")):
+            logger.warning("generate: нет RAG-контекста и данных клиента — "
+                           "безопасная деградация вместо догадки (грунтинг недоступен).")
+            return ("Сейчас не получается обратиться к нормативной базе банка, поэтому я не "
+                    "стану называть продукты и условия по памяти, чтобы не ввести вас в "
+                    "заблуждение. Пожалуйста, повторите вопрос чуть позже — отвечу строго "
+                    "по действующим документам.")
+
         if has_data:
             user_parts.append(
                 "\n=== ДАННЫЕ КЛИЕНТА (из БД банка, АВТОРИТЕТНЫЙ ИСТОЧНИК) ===\n"
@@ -316,14 +333,14 @@ def make_gigachat_deps(
     Собрать GraphDeps для прода: реальный Retriever Участника 1 + GigaChat-узлы.
     Один чат-клиент переиспользуется для classify и generate.
 
-    База агента — GigaChat (Lite), как и судья при оценке (см. evaluate.make_judge).
-    Модель можно переопределить аргументом `model` или переменной окружения
-    GIGACHAT_MODEL.
+    База агента — GigaChat-Pro (выше потолок на пограничных intent↔info кейсах);
+    судья при оценке остаётся на Lite (см. evaluate.make_judge). Модель можно
+    переопределить аргументом `model` или переменной окружения GIGACHAT_MODEL.
     """
     from rag import Retriever  # ленивый импорт (тянет chromadb)
 
     retriever = Retriever.load(index_dir)
-    chat = build_gigachat_chat(model=model or os.getenv("GIGACHAT_MODEL", "GigaChat"))
+    chat = build_gigachat_chat(model=model or os.getenv("GIGACHAT_MODEL", "GigaChat-Pro"))
     return GraphDeps(
         retriever=retriever,
         classify_fn=make_gigachat_classifier(chat),
