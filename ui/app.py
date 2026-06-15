@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -170,6 +171,43 @@ def load_scenario_clients() -> list[tuple[str, str]]:
     finally:
         conn.close()
     return [(cid, f"{cid} — {name} ({form})") for cid, name, form in rows]
+
+
+# Организационно-правовые префиксы — срезаем их для инициалов аватара.
+_LEGAL_PREFIXES = ("ООО", "ОАО", "ЗАО", "ПАО", "АО", "ИП")
+
+
+def _client_initials(name: str) -> str:
+    """Две буквы для аватара: первые буквы значимых слов имени (без ООО/ИП и кавычек)."""
+    s = name.replace('"', "").replace("«", "").replace("»", "").strip()
+    for p in _LEGAL_PREFIXES:
+        if s.upper().startswith(p + " ") or s.upper() == p:
+            s = s[len(p):].strip()
+            break
+    parts = [w for w in re.split(r"[\s\-]+", s) if w]
+    return ("".join(p[0] for p in parts[:2]) or "К").upper()
+
+
+@st.cache_data(show_spinner=False)
+def client_profile(client_id: str | None) -> dict:
+    """Карточка профиля для сайдбара: имя, подпись (форма · регион), инициалы аватара.
+    None / отсутствие в БД → гостевой профиль (анонимный доступ)."""
+    guest = {"name": "Гость", "sub": "Анонимный доступ", "initials": "?", "auth": False}
+    if not client_id or not DB_PATH.exists():
+        return guest
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT name, legal_form, region FROM clients WHERE client_id = ?",
+            (client_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return guest
+    name, legal_form, region = row
+    sub = " · ".join(x for x in (legal_form, region) if x) or client_id
+    return {"name": name, "sub": sub, "initials": _client_initials(name), "auth": True}
 
 
 def build_deps(mode: str):
@@ -475,6 +513,30 @@ st.markdown(
       .brand-sub{ font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
         color:var(--text-3); margin-top:2px; }
 
+      /* Профиль пользователя — закреплён у нижнего края сайдбара (sidebar = position:relative).
+         Список диалогов скроллится над ним; padding-bottom контента не даёт ему заехать под карточку. */
+      [data-testid="stSidebarUserContent"]{ padding-bottom:78px !important; }
+      section[data-testid="stSidebar"] .st-key-profilebar{
+        position:absolute !important; left:14px; right:14px; bottom:12px; z-index:4;
+        background:var(--surface); border:1px solid var(--border); border-radius:12px;
+        padding:7px 10px; box-shadow:var(--shadow-sm); }
+      .profile{ display:flex; align-items:center; gap:10px; min-width:0; }
+      .profile-av{ width:32px; height:32px; flex:0 0 auto; border-radius:50%;
+        background:var(--accent); color:#fff; font-weight:700; font-size:12.5px;
+        display:flex; align-items:center; justify-content:center; letter-spacing:.02em; }
+      .profile-av.guest{ background:var(--text-3); }
+      .profile-txt{ display:flex; flex-direction:column; min-width:0; line-height:1.2; }
+      .profile-name{ font-size:13px; font-weight:600; color:var(--text);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .profile-sub{ font-size:11px; color:var(--text-3);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      /* кнопка входа/выхода — компактная иконка без рамки */
+      .st-key-logout button, .st-key-login button{
+        border:none !important; background:none !important; box-shadow:none !important;
+        color:var(--text-3) !important; padding:4px !important; min-height:0 !important; }
+      .st-key-logout button:hover{ color:#C0392B !important; background:#FBEAEA !important; }
+      .st-key-login button:hover{ color:var(--accent-dark) !important; background:var(--accent-tint) !important; }
+
       /* Поле поиска по диалогам */
       section[data-testid="stSidebar"] [data-testid="stTextInput"] input{
         background:var(--surface) !important; border:1px solid var(--border) !important;
@@ -589,6 +651,29 @@ st.markdown(
 ss = st.session_state
 if "conversations" not in ss:        # первый запуск сессии — поднимаем диалоги с диска
     ss.conversations, ss.active_id = load_conversations()
+if "auth_client" not in ss:          # кто «вошёл»: client_id или None (вышел = аноним)
+    ss.auth_client = DEFAULT_CLIENT
+
+
+@st.dialog("Вход в бизнес-кабинет")
+def login_dialog() -> None:
+    """Спросить, под какого сценарного клиента авторизоваться. Демо-замена реального
+    логина: список берётся из БД (C-000001…C-000035)."""
+    clients = load_scenario_clients()
+    if not clients:
+        st.error("База клиентов недоступна — войти нельзя.")
+        return
+    labels = [label for _, label in clients]
+    # Если повторный вход — предвыбрать прошлого клиента, иначе первого.
+    prev = ss.get("last_auth_client", DEFAULT_CLIENT)
+    prev_idx = next((i for i, (cid, _) in enumerate(clients) if cid == prev), 0)
+    choice = st.selectbox("Выберите клиента", labels, index=prev_idx, key="login_pick")
+    st.caption("Демо: авторизация под выбранным сценарным клиентом.")
+    if st.button("Войти", type="primary", use_container_width=True, key="login_confirm"):
+        ss.auth_client = clients[labels.index(choice)][0]
+        ss.last_auth_client = ss.auth_client
+        ss.pop("pending", None)
+        st.rerun()
 
 # --- Сайдбар: бренд + «Новый диалог»; параметры сессии — только в режиме разработчика ---
 with st.sidebar:
@@ -602,11 +687,12 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-# Клиентский вид: фиксированная авторизованная сессия (как вход в бизнес-кабинет).
+# Клиентский вид: авторизация = вход в бизнес-кабинет. «Выход» из профиля делает
+# сессию анонимной (chat_site) — личные данные становятся недоступны (см. agent/auth.py).
 # Служебная «изнанка» под ответами выключена всегда.
 mode = DEFAULT_MODE
-channel = DEFAULT_CHANNEL
-client_id = DEFAULT_CLIENT
+client_id = ss.auth_client
+channel = DEFAULT_CHANNEL if client_id else "chat_site"
 dev_mode = False
 
 # --- Резолвим активный диалог. Прошлые не теряются: лежат в ss.conversations. ---
@@ -682,6 +768,31 @@ with st.sidebar:
                     ss.active_id = next(reversed(ss.conversations), None)
                 save_conversations()
                 st.rerun()
+
+    # --- Профиль пользователя (закреплён внизу сайдбара) + вход/выход ---
+    prof = client_profile(client_id)
+    with st.container(key="profilebar"):
+        pcol, acol = st.columns([0.8, 0.2], vertical_alignment="center")
+        pcol.markdown(
+            f'<div class="profile">'
+            f'<div class="profile-av{"" if prof["auth"] else " guest"}">{prof["initials"]}</div>'
+            f'<div class="profile-txt">'
+            f'<div class="profile-name">{prof["name"]}</div>'
+            f'<div class="profile-sub">{prof["sub"]}</div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+        if prof["auth"]:
+            if acol.button("", icon=":material/logout:", key="logout",
+                           help="Выйти — сессия станет анонимной, личные данные скроются"):
+                ss.last_auth_client = ss.auth_client   # запомним для предвыбора при входе
+                ss.auth_client = None
+                ss.pop("pending", None)
+                st.rerun()
+        else:
+            if acol.button("", icon=":material/login:", key="login",
+                           help="Войти — выбрать клиента (бизнес-кабинет)"):
+                login_dialog()
 
 if graph_error:
     st.error(

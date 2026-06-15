@@ -1,0 +1,18 @@
+# Полные зависимости проекта МСБ.ai (RAG + граф агента + Streamlit-UI).
+# Достаточно одной установки для запуска UI в боевом режиме (GigaChat).
+# Послойные файлы (agent/, rag/, ui/requirements.txt) сохранены для частичной сборки.
+
+# --- Граф агента (LangGraph) ---
+langgraph>=1.2
+langchain-core>=1.0
+langchain-gigachat>=0.5          # боевой LLM-режим (agent/llm.py, rag/)
+
+# --- RAG-слой (поиск по базе знаний) ---
+chromadb>=1.5
+numpy>=2.0
+python-dotenv>=1.0
+
+# --- UI-слой (Streamlit-чат) ---
+streamlit>=1.58
+langgraph-checkpoint-sqlite>=3.0  # персистентность диалогов между запусками
+pillow>=11.0                      # фавикон/логотип в ui/app.py
