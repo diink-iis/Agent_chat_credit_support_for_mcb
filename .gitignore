@@ -10,5 +10,8 @@ venv/
 # OS
 .DS_Store
 
-# streamlit
-.streamlit/
+# streamlit: тему (config.toml) коммитим, секреты — нет
+.streamlit/secrets.toml
+
+# Сохранённые диалоги UI (переписка + checkpointer графа) — локальные, не коммитим
+ui/.sessions/

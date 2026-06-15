@@ -1,3 +1,4 @@
 # Зависимости UI-слоя (Streamlit-чат поверх графа агента).
 # Ставится поверх agent/requirements.txt (+ rag/requirements.txt для боевого режима).
 streamlit>=1.36
+langgraph-checkpoint-sqlite>=2.0   # персистентность диалогов между запусками

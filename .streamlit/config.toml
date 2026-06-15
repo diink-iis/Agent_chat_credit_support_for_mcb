@@ -1,9 +1,18 @@
 # Конфигурация Streamlit для UI агента (ui/app.py).
 
+[server]
+# Авто-перезапуск при сохранении app.py: иначе с toolbarMode="minimal" плашка
+# «Source file changed → Rerun» спрятана, и правки не применяются без рестарта.
+runOnSave = true
+
 [client]
-# Прячем верхнюю панель «Deploy» и гамбургер-меню — чище для демо/учебного стенда.
+# Прячем верхнюю панель «Deploy» и гамбургер-меню — чище для демо/сдачи.
 toolbarMode = "minimal"
 
 [theme]
-# Чуть мягче дефолтного: акцент в тон банковской теме.
-primaryColor = "#2f6f4f"
+# Палитра референса (ui/ref): эмеральд-зелёный на зелёно-белом фоне.
+primaryColor = "#0F9650"
+backgroundColor = "#f4f7f4"
+secondaryBackgroundColor = "#fbfcfb"
+textColor = "#15201a"
+font = "sans serif"
