@@ -1,0 +1,33 @@
+%% Архитектура — компоненты системы (Уровень 1).
+%% Источник для слайда / для импорта в draw.io (Insert -> Mermaid).
+%% Соответствует presentation/architecture_components.drawio.
+
+graph LR
+    U[👤 Клиент] --> UI["Streamlit UI<br/>канал · авторизация · трейс маршрута"]
+    UI --> G
+
+    subgraph G [Агент — LangGraph + checkpointer]
+      direction TB
+      C[classify] --> R[retrieve_rag]
+      C --> D[query_db]
+      C --> E[escalate]
+      D --> R
+      R --> GEN[generate_answer]
+      D --> GEN
+    end
+
+    GEN -. "ответ + источники" .-> UI
+
+    C -. "промпт классиф." .-> LLM["GigaChat-Pro"]
+    GEN -. "промпт генерации" .-> LLM
+    R -. "эмбеддинг запроса" .-> EMB["GigaChat Embeddings"]
+    R --> VS[("Chroma<br/>индекс нормативки")]
+    D --> DB[("SQLite<br/>данные клиентов")]
+    E --> LOG[("Лог эскалаций")]
+
+    EVAL["evaluate.py — оценка 180 кейсов<br/>+ судья GigaChat Lite · кэш eval_runs.json"] -. "офлайн" .-> G
+
+    classDef ext fill:#e1d5e7,stroke:#9673a6;
+    classDef data fill:#fff2cc,stroke:#d6b656;
+    class LLM,EMB ext;
+    class VS,DB,LOG data;

@@ -1,29 +1,29 @@
 {
   "overall": {
-    "hits": 101,
+    "hits": 116,
     "total": 180,
-    "recall": 0.5611111111111111
+    "recall": 0.6444444444444445
   },
   "by_category": {
     "info": {
-      "hits": 37,
+      "hits": 38,
       "total": 45,
-      "recall": 0.8222222222222222
+      "recall": 0.8444444444444444
     },
     "transactional": {
-      "hits": 33,
+      "hits": 39,
       "total": 45,
-      "recall": 0.7333333333333333
+      "recall": 0.8666666666666667
     },
     "escalation_sales": {
-      "hits": 3,
+      "hits": 4,
       "total": 18,
-      "recall": 0.16666666666666666
+      "recall": 0.2222222222222222
     },
     "escalation_negative": {
-      "hits": 8,
+      "hits": 11,
       "total": 18,
-      "recall": 0.4444444444444444
+      "recall": 0.6111111111111112
     },
     "edge_no_data": {
       "hits": 4,
@@ -31,19 +31,19 @@
       "recall": 0.2222222222222222
     },
     "edge_conflict": {
-      "hits": 8,
+      "hits": 9,
       "total": 9,
-      "recall": 0.8888888888888888
+      "recall": 1.0
     },
     "edge_manipulation": {
-      "hits": 7,
+      "hits": 9,
       "total": 18,
-      "recall": 0.3888888888888889
+      "recall": 0.5
     },
     "offtopic": {
-      "hits": 1,
+      "hits": 2,
       "total": 9,
-      "recall": 0.1111111111111111
+      "recall": 0.2222222222222222
     }
   },
   "by_subcategory": {
@@ -73,9 +73,9 @@
       "recall": 0.75
     },
     "info_restructuring": {
-      "hits": 3,
+      "hits": 4,
       "total": 4,
-      "recall": 0.75
+      "recall": 1.0
     },
     "info_sla_status": {
       "hits": 6,
@@ -88,24 +88,24 @@
       "recall": 0.5
     },
     "tx_application_status": {
-      "hits": 10,
+      "hits": 12,
       "total": 13,
-      "recall": 0.7692307692307693
+      "recall": 0.9230769230769231
     },
     "tx_loan_state": {
-      "hits": 9,
+      "hits": 11,
       "total": 13,
-      "recall": 0.6923076923076923
+      "recall": 0.8461538461538461
     },
     "tx_repayment_calc": {
-      "hits": 6,
+      "hits": 7,
       "total": 7,
-      "recall": 0.8571428571428571
+      "recall": 1.0
     },
     "tx_eligible_products": {
-      "hits": 6,
+      "hits": 7,
       "total": 10,
-      "recall": 0.6
+      "recall": 0.7
     },
     "tx_loan_terms": {
       "hits": 2,
@@ -123,9 +123,9 @@
       "recall": 0.0
     },
     "sales_open_account": {
-      "hits": 0,
+      "hits": 1,
       "total": 2,
-      "recall": 0.0
+      "recall": 0.5
     },
     "sales_restructuring_init": {
       "hits": 1,
@@ -138,9 +138,9 @@
       "recall": 1.0
     },
     "neg_request_human": {
-      "hits": 1,
+      "hits": 3,
       "total": 5,
-      "recall": 0.2
+      "recall": 0.6
     },
     "neg_complaint_threat": {
       "hits": 4,
@@ -153,9 +153,9 @@
       "recall": 0.6666666666666666
     },
     "neg_long_unresolved": {
-      "hits": 1,
+      "hits": 2,
       "total": 3,
-      "recall": 0.3333333333333333
+      "recall": 0.6666666666666666
     },
     "neg_distress": {
       "hits": 0,
@@ -208,14 +208,14 @@
       "recall": 1.0
     },
     "conflict_product_vs_general": {
+      "hits": 5,
+      "total": 5,
+      "recall": 1.0
+    },
+    "manip_request_exception": {
       "hits": 4,
       "total": 5,
       "recall": 0.8
-    },
-    "manip_request_exception": {
-      "hits": 3,
-      "total": 5,
-      "recall": 0.6
     },
     "manip_third_party_data": {
       "hits": 0,
@@ -228,9 +228,9 @@
       "recall": 0.5
     },
     "manip_prompt_injection": {
-      "hits": 1,
+      "hits": 2,
       "total": 3,
-      "recall": 0.3333333333333333
+      "recall": 0.6666666666666666
     },
     "manip_provoke_promise": {
       "hits": 2,
@@ -248,26 +248,26 @@
       "recall": 0.0
     },
     "offtopic_political_sensitive": {
-      "hits": 0,
+      "hits": 1,
       "total": 1,
-      "recall": 0.0
+      "recall": 1.0
     }
   },
   "by_difficulty": {
     "easy": {
-      "hits": 24,
+      "hits": 28,
       "total": 51,
-      "recall": 0.47058823529411764
+      "recall": 0.5490196078431373
     },
     "medium": {
-      "hits": 45,
+      "hits": 50,
       "total": 72,
-      "recall": 0.625
+      "recall": 0.6944444444444444
     },
     "hard": {
-      "hits": 32,
+      "hits": 38,
       "total": 57,
-      "recall": 0.5614035087719298
+      "recall": 0.6666666666666666
     }
   },
   "citable": {
@@ -276,8 +276,8 @@
       "info",
       "transactional"
     ],
-    "hits": 78,
+    "hits": 86,
     "total": 99,
-    "recall": 0.7878787878787878
+    "recall": 0.8686868686868687
   }
 }

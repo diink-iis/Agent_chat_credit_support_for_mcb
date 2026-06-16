@@ -1,18 +1,22 @@
-# Полные зависимости проекта МСБ.ai (RAG + граф агента + Streamlit-UI).
-# Достаточно одной установки для запуска UI в боевом режиме (GigaChat).
-# Послойные файлы (agent/, rag/, ui/requirements.txt) сохранены для частичной сборки.
+# Помощник по кредитованию МСБ — все зависимости одним файлом.
+#   pip install -r requirements.txt
+# (Включает RAG, граф агента, UI и наблюдаемость Phoenix.)
 
 # --- Граф агента (LangGraph) ---
-langgraph>=1.2
-langchain-core>=1.0
-langchain-gigachat>=0.5          # боевой LLM-режим (agent/llm.py, rag/)
+langgraph>=0.2
+langchain-core>=0.3
+langgraph-checkpoint-sqlite>=2.0    # персистентность диалогов между запусками
 
-# --- RAG-слой (поиск по базе знаний) ---
-chromadb>=1.5
-numpy>=2.0
-python-dotenv>=1.0
+# --- RAG: поиск по нормативке (боевой режим) ---
+langchain-gigachat>=0.5             # GigaChat: чат-модель + эмбеддинги
+chromadb>=0.5                       # векторный индекс
+numpy>=1.24
+python-dotenv>=1.0                  # чтение .env с GIGACHAT_CREDENTIALS
 
-# --- UI-слой (Streamlit-чат) ---
-streamlit>=1.58
-langgraph-checkpoint-sqlite>=3.0  # персистентность диалогов между запусками
-pillow>=11.0                      # фавикон/логотип в ui/app.py
+# --- UI: Streamlit-чат поверх графа ---
+streamlit>=1.36
+
+# --- Наблюдаемость графа через Arize Phoenix ---
+arize-phoenix>=17.5,<18             # сервер + UI трейсинга (python -m phoenix.server.main serve)
+arize-phoenix-otel>=0.16            # register() — настройка OpenTelemetry на Phoenix
+openinference-instrumentation-langchain>=0.1.66   # трейсинг LangChain/LangGraph + GigaChat

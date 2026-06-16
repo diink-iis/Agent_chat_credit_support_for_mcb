@@ -1,0 +1,32 @@
+%% Граф агента — АВТО-сгенерирован из скомпилированного графа (LangGraph).
+%% Команда воспроизведения (на заглушках, без API):
+%%   python -c "from agent.graph import build_graph; from agent.llm import make_stub_deps; \
+%%              print(build_graph(make_stub_deps()).get_graph().draw_mermaid())"
+%% Ценность для защиты: схема гарантированно совпадает с кодом (не рисована вручную).
+
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	classify(classify)
+	query_db(query_db)
+	retrieve_rag(retrieve_rag)
+	generate_answer(generate_answer)
+	escalate(escalate)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> classify;
+	classify -.-> escalate;
+	classify -.-> generate_answer;
+	classify -.-> query_db;
+	classify -.-> retrieve_rag;
+	query_db -.-> generate_answer;
+	query_db -.-> retrieve_rag;
+	retrieve_rag --> generate_answer;
+	escalate --> __end__;
+	generate_answer --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

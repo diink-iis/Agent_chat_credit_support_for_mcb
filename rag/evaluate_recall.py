@@ -2,7 +2,9 @@
 evaluate_recall.py — оценка качества retrieval по qa.jsonl.
 
 Метрика: recall@k = процент кейсов, где хотя бы один referenced_document попал в top-k.
-Разбивка по категориям и подкатегориям.
+Разбивка по категориям и подкатегориям. Итоговый показатель качества retrieval —
+грунтинг по citable-категориям (CITABLE_CATEGORIES: info / transactional /
+edge_conflict); поведенческие категории в него не входят (там recall неинформативен).
 
 Использование:
   python evaluate_recall.py --qa data/qa/qa.jsonl --corpus rag/corpus_chunks.jsonl --k 5
@@ -17,6 +19,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from retriever import Retriever, build_query_from_history
+
+# Категории, где ответ опирается на нормативку и retrieval осмыслен (как citation в
+# evaluate.py). В поведенческих категориях (escalation_*, edge_no_data,
+# edge_manipulation, offtopic) gold-ссылка указывает на регламент поведения агента,
+# а не на смысловой пункт, — там корректность обеспечивают classify/escalate, и
+# recall неинформативен. Поэтому итоговый грунтинг считаем по этим трём.
+CITABLE_CATEGORIES = {"info", "transactional", "edge_conflict"}
 
 
 def section_matches(result_section: str, ref_section: str) -> bool:
@@ -138,6 +147,22 @@ def evaluate_recall(
                 else 0.0
             )
 
+    # Грунтинг по citable-категориям: осмысленный показатель качества retrieval
+    # (поведенческие категории исключены — см. CITABLE_CATEGORIES). Это число, а не
+    # размытый overall по 8 категориям, и стоит сравнивать с citation из evaluate.py.
+    citable_hits = sum(
+        metrics["by_category"][c]["hits"] for c in CITABLE_CATEGORIES if c in metrics["by_category"]
+    )
+    citable_total = sum(
+        metrics["by_category"][c]["total"] for c in CITABLE_CATEGORIES if c in metrics["by_category"]
+    )
+    metrics["citable"] = {
+        "categories": sorted(CITABLE_CATEGORIES),
+        "hits": citable_hits,
+        "total": citable_total,
+        "recall": citable_hits / citable_total if citable_total > 0 else 0.0,
+    }
+
     return metrics
 
 
@@ -149,9 +174,17 @@ def print_metrics(metrics: dict) -> None:
 
     overall = metrics["overall"]
     print(
-        f"\nОбщий recall: {overall['recall']:.2%} "
+        f"\nОбщий recall (все 8 категорий): {overall['recall']:.2%} "
         f"({overall['hits']}/{overall['total']})"
     )
+
+    citable = metrics.get("citable")
+    if citable:
+        print(
+            f"Грунтинг по citable ({', '.join(citable['categories'])}): "
+            f"{citable['recall']:.2%} ({citable['hits']}/{citable['total']})  "
+            f"← осмысленный показатель качества retrieval"
+        )
 
     print("\nПо категориям:")
     for cat, m in sorted(metrics["by_category"].items()):

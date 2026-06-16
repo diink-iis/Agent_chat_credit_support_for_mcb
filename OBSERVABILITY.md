@@ -6,8 +6,10 @@ query_db → generate → escalate) с раскрытием промптов, о
 
 ## Установка (один раз)
 
+Зависимости Phoenix входят в общий `requirements.txt` — отдельной установки не нужно:
+
 ```bash
-pip install -r requirements-observability.txt
+pip install -r requirements.txt
 ```
 
 ## Запуск (два терминала)

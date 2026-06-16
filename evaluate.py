@@ -417,6 +417,11 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
+    # Креды GigaChat нужны и судье (--judge), и агенту. Грузим .env здесь, чтобы
+    # путь --from-runs --judge тоже видел GIGACHAT_CREDENTIALS (без поднятия агента).
+    from dotenv import load_dotenv
+    load_dotenv()
+
     categories = set(args.categories.split(",")) if args.categories else None
     cases = load_cases(args.qa, categories, args.limit)
 

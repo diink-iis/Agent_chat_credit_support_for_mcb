@@ -10,11 +10,8 @@ venv/
 # OS
 .DS_Store
 
-# streamlit: тему (config.toml) коммитим, секреты — нет
-.streamlit/secrets.toml
-
-# Сохранённые диалоги UI (переписка + checkpointer графа) — локальные, не коммитим
+# Runtime: персистентность диалогов UI (SqliteSaver)
 ui/.sessions/
 
-# Референсные материалы (макеты/выгрузки) — не часть поставки
-ui/ref/
+# Office временные lock-файлы
+~$*
