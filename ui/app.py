@@ -505,7 +505,7 @@ st.markdown(
         z-index:5; margin:0 !important; }
       /* Сайдбар: схлопываем верхнюю шапку и паддинг, чтобы бренд был у самого верха */
       [data-testid="stSidebarHeader"]{ height:0 !important; min-height:0 !important; padding:0 !important; }
-      [data-testid="stSidebarUserContent"]{ padding-top:6px !important; }
+      [data-testid="stSidebarUserContent"]{ padding-top:16px !important; }
       /* всё боковое поле сайдбара переносим на user-content (14px), чтобы absolute-карточка
          профиля с теми же инсетами совпадала по ширине с кнопками/поиском */
       section[data-testid="stSidebar"]{ padding-left:0 !important; padding-right:0 !important; }
@@ -518,7 +518,7 @@ st.markdown(
       /* бренд закреплён слева — не «бегает» при изменении ширины сайдбара.
          align-items:center + лёгкий подъём лого: его центр совпадает с центром
          вордмарка «МСБ.ai», а не со всем блоком (иначе росток визуально ниже текста). */
-      .brand{ display:flex; align-items:center; justify-content:flex-start; gap:11px; margin:0 0 4px; }
+      .brand{ display:flex; align-items:center; justify-content:flex-start; gap:11px; margin:0 0 16px; }
       /* лого-плашка: зелёный скруглённый квадрат с белым ростком (как в референсе).
          фильтр-в-белый только на img внутри — иначе перекрасит и сам зелёный квадрат */
       .brand-badge{ width:38px; height:38px; flex:0 0 auto; border-radius:12px;
@@ -531,46 +531,52 @@ st.markdown(
       .brand-sub{ font-size:9px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
         color:var(--text-3); margin-top:5px; }
 
-      /* Профиль пользователя — ОДНА кнопка-карточка. Аватар = ::before (буква из
-         --prof-init), стрелка = ::after. Раскладка целиком на flex кнопки → никаких
-         Streamlit-колонок, поэтому центрируется ровно. Ширина = другим кнопкам.
-         К низу прижимаем: контейнер кнопки получает margin-top:auto, а вертикальный
-         блок-родитель растягиваем на высоту сайдбара. */
+      /* Профиль — карточка-строка как у диалогов: некликабельная инфо-зона (аватар +
+         клиент) + отдельные иконки справа. К низу прижимаем через margin-top:auto,
+         а блок-родитель растягиваем на высоту сайдбара (через :has). */
+      /* Прижатие к низу: главный вертикальный блок сайдбара (тот, что содержит карточку)
+         тянем на всю высоту, а его ПОСЛЕДНИЙ прямой ребёнок (обёртка карточки, какой бы
+         testid у неё ни был) толкаем вниз через margin-top:auto. */
       [data-testid="stSidebarUserContent"]{ overflow:visible !important;
         padding-left:14px !important; padding-right:14px !important; }
-      /* блок с виджетами тянем на всю высоту (через :has — он содержит профиль) */
-      section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.st-key-profilebtn){
-        min-height:calc(100dvh - 34px) !important; }
-      /* контейнер-обёртку кнопки профиля толкаем в самый низ */
-      section[data-testid="stSidebar"] [data-testid="stElementContainer"]:has(.st-key-profilebtn),
-      section[data-testid="stSidebar"] .st-key-profilebtn{ margin-top:auto !important; }
-      /* сама карточка-кнопка */
-      .st-key-profilebtn button{
-        display:flex !important; align-items:center !important; gap:11px !important;
-        min-height:54px !important; padding:8px 11px !important; width:100% !important;
+      section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.st-key-acctcard){
+        min-height:calc(100dvh - 30px) !important;
+        display:flex !important; flex-direction:column !important; }
+      section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.st-key-acctcard) > *:last-child{
+        margin-top:auto !important; margin-bottom:16px !important; }
+      /* сама карточка — flex-строка с центрированием по вертикали */
+      section[data-testid="stSidebar"] .st-key-acctcard{
         background:var(--surface) !important; border:1px solid var(--border) !important;
         border-radius:12px !important; box-shadow:var(--shadow-sm) !important;
-        justify-content:flex-start !important; text-align:left !important;
-        transition:border-color .14s, box-shadow .14s !important; }
-      .st-key-profilebtn button:hover{
+        padding:7px 8px 7px 11px !important; transition:border-color .14s, box-shadow .14s; }
+      section[data-testid="stSidebar"] .st-key-acctcard:hover{
         border-color:var(--accent-line) !important; box-shadow:var(--shadow-md) !important; }
-      /* аватар-квадрат с буквой (буква берётся из CSS-переменной --prof-init) */
-      .st-key-profilebtn button::before{
-        content:var(--prof-init,"К"); flex:0 0 auto; width:34px; height:34px; border-radius:10px;
-        background:var(--prof-avbg,var(--mint-100)); border:1px solid var(--prof-avbd,var(--mint-200));
-        color:var(--prof-avfg,var(--accent-dark)); display:flex; align-items:center;
-        justify-content:center; font-weight:700; font-size:14px; }
-      /* текст: имя (strong) + подпись */
-      .st-key-profilebtn button [data-testid="stMarkdownContainer"]{
-        flex:1 1 auto !important; min-width:0 !important; text-align:left !important; line-height:1.25; }
-      .st-key-profilebtn button p{ margin:0 !important; text-align:left !important;
-        font-size:10.5px !important; color:var(--text-3) !important;
+      /* внутренние блоки/колонки прозрачны, по центру по вертикали, без лишних полей/отступов */
+      .st-key-acctcard [data-testid="stVerticalBlock"]{ gap:0 !important; background:transparent !important; }
+      .st-key-acctcard [data-testid="stHorizontalBlock"]{ gap:4px !important; align-items:center !important; }
+      .st-key-acctcard [data-testid="stColumn"]{ align-self:center !important; }
+      .st-key-acctcard [data-testid="stElementContainer"]{ margin:0 !important; }
+      .st-key-acctcard [data-testid="stMarkdownContainer"]{ margin:0 !important; }
+      /* инфо-зона: аватар + имя/подпись (некликабельно) */
+      .profile{ display:flex; align-items:center; gap:11px; min-width:0; }
+      .profile-av{ width:34px; height:34px; flex:0 0 auto; border-radius:10px;
+        background:var(--mint-100); border:1px solid var(--mint-200); color:var(--accent-dark);
+        font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; }
+      .profile-av.guest{ background:#EEF2F0; border-color:#E1E7E3; color:var(--text-3); }
+      .profile-txt{ display:flex; flex-direction:column; min-width:0; line-height:1.2; }
+      .profile-name{ font-size:13px; font-weight:700; color:var(--text);
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .st-key-profilebtn button p strong{ display:block; font-size:13px; font-weight:700;
-        color:var(--text) !important; }
-      /* стрелка справа */
-      .st-key-profilebtn button::after{
-        content:"→"; flex:0 0 auto; margin-left:6px; color:var(--text-3); font-size:18px; }
+      .profile-sub{ font-size:10.5px; color:var(--text-3);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      /* иконки справа (сменить клиента / выйти / войти) — как «удалить» у диалога */
+      .st-key-acct_switch button, .st-key-acct_logout button, .st-key-acct_login button{
+        border:none !important; background:transparent !important; box-shadow:none !important;
+        color:var(--text-3) !important; width:32px !important; height:32px !important;
+        min-height:0 !important; padding:0 !important; border-radius:8px !important;
+        display:flex !important; align-items:center !important; justify-content:center !important; }
+      .st-key-acct_switch button:hover, .st-key-acct_login button:hover{
+        color:var(--accent-dark) !important; background:var(--accent-tint) !important; }
+      .st-key-acct_logout button:hover{ color:#C0392B !important; background:#FBEAEA !important; }
 
       /* Поле поиска по диалогам — с иконкой-лупой слева (как в референсе) */
       section[data-testid="stSidebar"] [data-testid="stTextInput"] input{
@@ -584,7 +590,9 @@ st.markdown(
 
       /* Заголовок секции истории — капсом, как в референсе */
       .histlabel{ font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
-        color:var(--text-3); padding:2px 8px 2px; margin:0; }
+        color:var(--text-3); padding:0 8px; margin:14px 0 8px; }
+      /* немного воздуха между «Новый диалог» и поиском (свободнее, как в референсе) */
+      .st-key-newdlg{ margin-bottom:8px !important; }
 
       /* Кнопки сайдбара — плоские строки навигации */
       section[data-testid="stSidebar"] .stButton button{
@@ -635,7 +643,7 @@ st.markdown(
       .block-container .stButton button{
         border:1px solid var(--border); background:#fff; color:var(--text-3);
         border-radius:16px; box-shadow:none; font-weight:500; font-size:12px; line-height:1.45;
-        padding:15px; text-align:left !important; min-height:96px; align-items:flex-start !important;
+        padding:15px; text-align:left !important; height:116px !important; align-items:flex-start !important;
         transition:border-color .15s, transform .15s, box-shadow .15s; }
       .block-container .stButton button:hover{
         border-color:var(--accent-line); transform:translateY(-2px);
@@ -809,18 +817,6 @@ def login_dialog() -> None:
         # Диалоги нового профиля подхватит резолв активного диалога (свои чаты).
         st.rerun()
 
-# --- Сайдбар: бренд + «Новый диалог»; параметры сессии — только в режиме разработчика ---
-with st.sidebar:
-    st.markdown(
-        f'<div class="brand">'
-        f'<span class="brand-badge"><img src="{logo_data_uri()}" alt="МСБ.ai"/></span>'
-        f'<div class="brand-text">'
-        f'<div class="brand-name">МСБ<span>.ai</span></div>'
-        f'<div class="brand-sub">Кредитный ассистент</div>'
-        f'</div></div>',
-        unsafe_allow_html=True,
-    )
-
 # Клиентский вид: авторизация = вход в бизнес-кабинет. «Выход» из профиля делает
 # сессию анонимной (chat_site) — личные данные становятся недоступны (см. agent/auth.py).
 # Служебная «изнанка» под ответами выключена всегда.
@@ -850,9 +846,18 @@ try:
 except Exception as exc:  # noqa: BLE001
     graph_error = str(exc)
 
-# --- Сайдбар (продолжение): «Новый диалог» + история диалогов ---
+# --- Сайдбар: бренд + «Новый диалог» + история + карточка аккаунта (один блок,
+# чтобы прижатие карточки к низу было однозначным). ---
 with st.sidebar:
-    st.divider()
+    st.markdown(
+        f'<div class="brand">'
+        f'<span class="brand-badge"><img src="{logo_data_uri()}" alt="МСБ.ai"/></span>'
+        f'<div class="brand-text">'
+        f'<div class="brand-name">МСБ<span>.ai</span></div>'
+        f'<div class="brand-sub">Кредитный ассистент</div>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
     if st.button("Новый диалог", icon=":material/add:",
                  use_container_width=True, key="newdlg"):
         # Создаём свежий диалог (если текущий уже непустой), старый остаётся в списке.
@@ -910,29 +915,43 @@ with st.sidebar:
                 save_conversations()
                 st.rerun()
 
-    # --- Профиль пользователя: одна кликабельная кнопка (аватар и стрелка — через
-    # CSS ::before/::after; так раскладка полностью под контролем, без Streamlit-колонок,
-    # которые ломали центрирование). Клик: авторизован → выход, гость → окно входа. ---
+    # --- Профиль пользователя: карточка-строка как у диалогов — некликабельная зона
+    # с аватаром и клиентом + отдельные иконки справа (как «удалить» у диалога):
+    # сменить клиента и выйти (для гостя — войти). ---
     prof = client_profile(client_id)
-    _av_bg = "var(--mint-100)" if prof["auth"] else "#EEF2F0"
-    _av_bd = "var(--mint-200)" if prof["auth"] else "#E1E7E3"
-    _av_fg = "var(--accent-dark)" if prof["auth"] else "var(--text-3)"
-    st.markdown(
-        f"<style>.st-key-profilebtn{{--prof-init:'{prof['initials']}';"
-        f"--prof-avbg:{_av_bg};--prof-avbd:{_av_bd};--prof-avfg:{_av_fg};}}</style>",
-        unsafe_allow_html=True,
-    )
-    _prof_help = ("Выйти — сессия станет анонимной, личные данные скроются"
-                  if prof["auth"] else "Войти — выбрать клиента (бизнес-кабинет)")
-    if st.button(f"**{prof['name']}**  \n{prof['sub']}", use_container_width=True,
-                 key="profilebtn", help=_prof_help):
+    _av_cls = "" if prof["auth"] else " guest"
+    _open_login = False
+    with st.container(key="acctcard"):
         if prof["auth"]:
-            ss.last_auth_client = ss.auth_client
-            ss.auth_client = None
-            ss.pop("pending", None)
-            st.rerun()
+            info_col, sw_col, out_col = st.columns([0.7, 0.15, 0.15], vertical_alignment="center")
         else:
-            login_dialog()
+            info_col, out_col = st.columns([0.82, 0.18], vertical_alignment="center")
+            sw_col = None
+        info_col.markdown(
+            f'<div class="profile">'
+            f'<div class="profile-av{_av_cls}">{prof["initials"]}</div>'
+            f'<div class="profile-txt">'
+            f'<div class="profile-name">{prof["name"]}</div>'
+            f'<div class="profile-sub">{prof["sub"]}</div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+        if prof["auth"]:
+            if sw_col.button("", icon=":material/swap_horiz:", key="acct_switch",
+                             help="Сменить клиента"):
+                _open_login = True
+            if out_col.button("", icon=":material/logout:", key="acct_logout",
+                              help="Выйти — сессия станет анонимной"):
+                ss.last_auth_client = ss.auth_client
+                ss.auth_client = None
+                ss.pop("pending", None)
+                st.rerun()
+        else:
+            if out_col.button("", icon=":material/login:", key="acct_login",
+                              help="Войти — выбрать клиента"):
+                _open_login = True
+    if _open_login:
+        login_dialog()
 
 # Верхняя панель «плавающего» блока: «живой» индикатор + название активного диалога.
 _crumb_title = (active["title"] or "Новый диалог").strip()
