@@ -767,7 +767,6 @@ def login_dialog() -> None:
         .logintitle{ font-size:24px; font-weight:800; letter-spacing:-.02em;
           color:var(--text); line-height:1.1; margin:0 0 5px; }
         .loginsub{ font-size:13.5px; color:var(--text-2); line-height:1.4; margin:0 0 14px; }
-        .loginfoot{ text-align:center; font-size:11.5px; color:var(--text-3); margin-top:12px; }
         /* подпись поля */
         .st-key-login_pick label p{ font-size:13px !important; font-weight:700 !important;
           color:var(--text) !important; }
@@ -805,10 +804,6 @@ def login_dialog() -> None:
     choice = st.selectbox("Выберите клиента", labels, index=prev_idx, key="login_pick")
     st.caption("Демо: авторизация под выбранным сценарным клиентом.")
     clicked = st.button("Войти  →", type="primary", use_container_width=True, key="login_confirm")
-    st.markdown(
-        '<div class="loginfoot">🔒 Защищённое соединение · 256-bit TLS</div>',
-        unsafe_allow_html=True,
-    )
     if clicked:
         cid = clients[labels.index(choice)][0]
         ss.auth_client = cid

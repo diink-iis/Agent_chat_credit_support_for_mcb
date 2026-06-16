@@ -1,0 +1,6 @@
+# Опциональная наблюдаемость графа через Arize Phoenix (см. OBSERVABILITY.md).
+# Ставится поверх основного requirements.txt и нужна ТОЛЬКО при PHOENIX_TRACING=1.
+# Обычный прогон (UI/eval) без этих пакетов работает — agent/tracing.py делает no-op.
+
+arize-phoenix>=17.0                        # Phoenix UI + коллектор (phoenix.server.main, phoenix.otel)
+openinference-instrumentation-langchain>=0.1.66  # auto_instrument для LangChain/GigaChat
